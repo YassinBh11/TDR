@@ -3,7 +3,7 @@ import time
 import os
 import pyfiglet
 
-titulo= pyfiglet.figlet_format("MarcosCapi")
+titulo= pyfiglet.figlet_format("Estrategia Mental")
 print(titulo)
 
 jugador1="j1"
@@ -100,23 +100,26 @@ tablero=[]
 inicio= []
 tablero.append("INICIO")
 
-casillas_positivas= []
-for i in range(1,6):
+casillas_negativas= []
+for i in range(-1,-5, -1):   
     tablero.append(i)
    
 casillas_suerte= []
-for _ in range(4):
+for _ in range(2):
     tablero.append("SUERTE")
 
+casillas_positivas= []
+for i in range(5,1, -1):
+    tablero.append(i)
+
 casillas_negativas= []
-for i in range(-5,0):
+for i in range(-1,-6, -1):
     tablero.append(i)
 
 meta=[]
 tablero.append("META")
 
 print(tablero)
-casillas_totales= 15
 
 # Marca si un jugador ya llegó a META
 jugador_llego_meta = {"j1": False, "j2": False}
@@ -128,10 +131,10 @@ posiciones = {
     "j2_m1": 0,
     "j2_m2": 0,
     "j2_m3": 0,
-    "p1": 6,
-    "p2": 7,
-    "p3": 8,
-    "p4": 9
+    "p1": 5,
+    "p2": 6,
+    "p3": 7,
+    "p4": 8,
 }
 
 def eleccion_muñecos1():
@@ -259,7 +262,6 @@ def mostrar_tablero(tablero, posiciones):
 jugador_llego_meta = {nombre: False for nombre in posiciones.keys()}
 
 ultimo_ocupante= {}
-
 casillas_reclamadas= {}
 
 def limpiar_tablero(tablero, posiciones, ultimo_ocupante, casillas_ocupadas_antes):
@@ -322,7 +324,6 @@ def verificar_meta(posiciones, meta_index):
             if pos >= meta_index:
                 posiciones[nombre] = meta_index  
                 registrar_llegada(nombre)
-
 limpiar()
 mostrar_tablero(tablero, posiciones)
 
@@ -357,7 +358,7 @@ def aplicar_puntuacion(jugador, casilla):
         print(f"{jugador} cayó en SUERTE: la casilla {idx_max_neg} ({antiguo}) se convierte en {tablero[idx_max_neg]}.")
         return
 
-    # 3) INICIO / META / otras → sin efecto
+    # 3) INICIO y META → sin efecto
     return
 
 def mostrar_puntuaciones():
@@ -442,7 +443,6 @@ def calcular_puntuacion_final(inventario):
     y devuelve la puntuación final.
     """
     inventario = inventario.copy()
-
     # Listar todos los valores negativos
     negativos = [v for v in inventario if isinstance(v, int) and v < 0]
 
@@ -493,7 +493,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
         if len(ocupantes_origen) == 0 and posicion_origen != meta_index:
             casillas_vacias.add(posicion_origen)
             
-            
             valor_casilla = tablero[posicion_origen]
             if valor_casilla not in ("INICIO", "META"):
                 if pieza_movida.startswith("j1_"):
@@ -508,7 +507,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             if nombre.startswith("j") or nombre.startswith("p"):
                 posiciones[nombre] = min(posiciones[nombre], meta_index)
 
-        #reclamar_casillas(tablero, posiciones, ultimo_ocupante, casillas_reclamadas, inventario_j1, inventario_j2)
         tablero, _, ultimo_ocupante, meta_index = limpiar_tablero(tablero, posiciones, ultimo_ocupante, casillas_vacias)
         casillas_totales = len(tablero)
 
@@ -545,7 +543,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
         if len(ocupantes_origen) == 0 and posicion_origen != meta_index:
             casillas_vacias.add(posicion_origen)
             
-            
             valor_casilla = tablero[posicion_origen]
             if valor_casilla not in ("INICIO", "META"):
                 if pieza_movida.startswith("j1_"):
@@ -559,7 +556,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             if nombre.startswith("j") or nombre.startswith("p"):
                 posiciones[nombre] = min(posiciones[nombre], meta_index)
 
-        #reclamar_casillas(tablero, posiciones, ultimo_ocupante, casillas_reclamadas, inventario_j1, inventario_j2)
         tablero, _, ultimo_ocupante, meta_index = limpiar_tablero(tablero, posiciones, ultimo_ocupante, casillas_vacias)
         casillas_totales = len(tablero)
 
@@ -590,7 +586,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             if len(ocupantes_origen) == 0 and posicion_origen != meta_index:
                 casillas_vacias.add(posicion_origen)
                 
-                
                 valor_casilla = tablero[posicion_origen]
                 if valor_casilla not in ("INICIO", "META"):
                     if pieza_movida.startswith("j1_"):
@@ -604,7 +599,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
                 if nombre.startswith("j") or nombre.startswith("p"):
                     posiciones[nombre] = min(posiciones[nombre], meta_index)
 
-            #reclamar_casillas(tablero, posiciones, ultimo_ocupante, casillas_reclamadas, inventario_j1, inventario_j2)
             tablero, _, ultimo_ocupante, meta_index = limpiar_tablero(tablero, posiciones, ultimo_ocupante, casillas_vacias)
             casillas_totales = len(tablero)
 
@@ -632,7 +626,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             if len(ocupantes_origen) == 0 and posicion_origen != meta_index:
                 casillas_vacias.add(posicion_origen)
                 
-                
                 valor_casilla = tablero[posicion_origen]
                 if valor_casilla not in ("INICIO", "META"):
                     if pieza_movida.startswith("j1_"):
@@ -645,8 +638,7 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             for nombre in posiciones:
                 if nombre.startswith("j") or nombre.startswith("p"):
                     posiciones[nombre] = min(posiciones[nombre], meta_index)
-
-            #reclamar_casillas(tablero, posiciones, ultimo_ocupante, casillas_reclamadas, inventario_j1, inventario_j2)
+                    
             tablero, _, ultimo_ocupante, meta_index = limpiar_tablero(tablero, posiciones, ultimo_ocupante, casillas_vacias)
             casillas_totales = len(tablero)
 
@@ -659,7 +651,7 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
     mostrar_inventarios()
 
 # --- FIN DEL JUEGO ---
-# Calcular puntuaciones finales usando inventarios y tokens
+#Calcular puntuaciones finales usando inventarios y tokens
 puntuacion1 = calcular_puntuacion_final(inventario_j1)
 puntuacion2 = calcular_puntuacion_final(inventario_j2)
 
@@ -682,4 +674,4 @@ elif puntuacion2 > puntuacion1:
     print(f"{jugador2} ha ganado!")
 else:
     print("¡Empate!")
-    print("\n¡El juego ha terminado! Gracias por jugar.")   
+    print("\n¡El juego ha terminado! Gracias por jugar.") 
