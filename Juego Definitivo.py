@@ -309,12 +309,19 @@ def limpiar_tablero(tablero, posiciones, ultimo_ocupante, casillas_ocupadas_ante
 meta_index= len(tablero)-1
 casillas_ocupadas_antes = set(posiciones.values())
 
+orden_llegada = []
+
+def registrar_llegada(nombre):
+    """Registra el orden en que los muñecos llegan a META"""
+    if nombre not in orden_llegada:
+        orden_llegada.append(nombre)
+
 def verificar_meta(posiciones, meta_index):
     for nombre, pos in posiciones.items():
         if nombre.startswith("j"): #SOLO MUÑECOS NO PINGOROTES
             if pos >= meta_index:
                 posiciones[nombre] = meta_index  
-                print(f"{nombre} ha llegado a la meta")
+                registrar_llegada(nombre)
 
 limpiar()
 mostrar_tablero(tablero, posiciones)
@@ -655,6 +662,14 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
 # Calcular puntuaciones finales usando inventarios y tokens
 puntuacion1 = calcular_puntuacion_final(inventario_j1)
 puntuacion2 = calcular_puntuacion_final(inventario_j2)
+
+recompensas = [5, 4, 3, 2, 1, 0]
+for i, muñeco in enumerate(orden_llegada):
+        puntos = recompensas[min(i, len(recompensas) - 1)]
+        if muñeco.startswith("j1_"):
+            puntuacion1 += puntos
+        elif muñeco.startswith("j2_"):
+            puntuacion2 += puntos
 
 print("\n PUNTUACIONES FINALES ")
 print(f"{jugador1}: {puntuacion1} puntos")
