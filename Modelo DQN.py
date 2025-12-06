@@ -17,36 +17,40 @@ epsilon_start = 1.0      # Probabilidad inicial de explorar
 epsilon_end = 0.05       # Probabilidad mínima de explorar
 epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
 memory_capacity = 10000  # Tamaño de la memoria de experiencias
-num_episodes = 100         # Número de partidas/episodios de entrenamiento
+num_episodes = 10         # Número de partidas/episodios de entrenamiento
 
 class Juego(gym.Env):
 
     def __init__(self):
-        
-        self.puntuacion1=0
-        self.puntuacion2=0
 
-        self.jugador_llego_meta = {nombre: False for nombre in self.posiciones.keys()}
-
+        # --- Variables generales de partida ---
+        self.puntuacion1 = 0
+        self.puntuacion2 = 0
         self.ultimo_ocupante = {}
         self.casillas_reclamadas = {}
-
-        self.meta_index = len(self.tablero) - 1
-        self.casillas_ocupadas_antes = set(self.posiciones.values())
-        self.orden_llegada = []
-
-        # Inventarios para almacenar casillas reclamadas
         self.inventario_j1 = []
         self.inventario_j2 = []
-
-    # Tokens de SUERTE
+        # Tokens de suerte
         self.tokens_suerte_j1 = 0
         self.tokens_suerte_j2 = 0
-        # 7 acciones: m1, m2, m3, p1, p2, p3, p4
-        self.action_space = spaces.Discrete(7)
-
-        # Observación simplificada: posiciones 8 muñecos + tamaño tablero + dado visible
-        self.observation_space = spaces.Box(low=0, high=35, shape=(10,), dtype=np.int32)
+        # Bandera de finalización
+        self.done = False
+        # Estructuras que dependen del tablero
+        self.tablero = []
+        self.posiciones = {}
+        self.casillas_ocupadas_antes = set()
+        self.orden_llegada = []
+        self.meta_index = 0
+        # --- Espacios Gym ---
+        self.action_space = spaces.Discrete(7) 
+        # Observación: 10 valores + tamaño tablero = 11
+        self.observation_space = spaces.Box(
+            low=0,
+            high=35,
+            shape=(11,),
+            dtype=np.int32
+        )
+        # Finalmente reseteamos para construir el tablero
         self.reset()
 
     def reset(self):
@@ -431,38 +435,35 @@ class Juego(gym.Env):
                         except Exception:
                             self.orden_llegada.append(nombre)
 
-        # ---- Comprobar condiciones de victoria y calcular reward ----
-        j1_win = self.todos_en_meta("j1") if hasattr(self, "todos_en_meta") else (
-            self.posiciones["j1_m1"] == self.meta_index and self.posiciones["j1_m2"] == self.meta_index and self.posiciones["j1_m3"] == self.meta_index
-        )
-        j2_win = self.todos_en_meta("j2") if hasattr(self, "todos_en_meta") else (
-            self.posiciones["j2_m1"] == self.meta_index and self.posiciones["j2_m2"] == self.meta_index and self.posiciones["j2_m3"] == self.meta_index
-        )
+        #---- Comprobar condiciones de final de partida ----
+        j1_win = self.todos_en_meta("j1")
+        j2_win = self.todos_en_meta("j2")
 
-        if j1_win and j2_win:
-            reward = 0.0
-            self.done = True
-        elif j1_win:
-            reward = 10.0
-            self.done = True
-        elif j2_win:
-            reward = -10.0
-            self.done = True
-        else:
-            # recompensa intermedia neutra (tú pediste 0)
-            reward = 0.0
+        if j1_win or j2_win:
 
+            # calcular puntuaciones finales reales
+            punt_j1 = self.calcular_puntuacion_final(self.inventario_j1)
+            punt_j2 = self.calcular_puntuacion_final(self.inventario_j2)
+            
+            if punt_j1 >= 0:
+                reward = punt_j1 ** 2
+            else:
+                reward = -1 * (punt_j1 ** 2)
+
+            self.done = True
+            obs = self.get_obs()
+            return obs, float(reward), True, False, info
         obs = self.get_obs()
-        return obs, float(reward), bool(self.done), False, info
+        return obs, 0.0, False, False, info 
 
 #Comprobar que el entorno se ejecuta de manera correcta
-if __name__ == "__main__":  
-    env = Juego()  # Crear el entorno
-    estado = env.reset()
-    print("Estado inicial:", estado)
-    done = False
-    paso = 0
-    while not done:
+#if __name__ == "__main__":  
+    #env = Juego()  # Crear el entorno
+    #estado = env.reset()
+    #print("Estado inicial:", estado)
+    #done = False
+    #paso = 0
+    #while not done:
         paso += 1
         accion = env.action_space.sample()  # Acción aleatoria (0, 1 o 2)
         estado, recompensa, terminated, truncated, info = env.step(accion)
@@ -478,7 +479,7 @@ if __name__ == "__main__":
 
 
 class Red_neuronal(nn.Module):
-    def __init__(self, input_size=10, hidden_size=64, output_size=5):
+    def __init__(self, input_size=11, hidden_size=64, output_size=5):
         super(Red_neuronal, self).__init__()
         # Capas totalmente conectadas
         self.fc1 = nn.Linear(input_size, hidden_size)
@@ -596,7 +597,7 @@ def entrenar():
         if episodio % 100 == 0:
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
 
-def evaluar(modelo, num_partidas=8):
+def evaluar(modelo, num_partidas=10):
     env = Juego()
     victorias = 0
     empates = 0
