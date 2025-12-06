@@ -110,16 +110,16 @@ class Juego(gym.Env):
     def get_obs(self):
         # observación compacta: posiciones de los 6 muñecos + p1,p2 + tamaño tablero 
         return np.array([
-            self.pos["j1_m1"],
-            self.pos["j1_m2"],
-            self.pos["j1_m3"],
-            self.pos["j2_m1"],
-            self.pos["j2_m2"],
-            self.pos["j2_m3"],
-            self.pos["p1"],
-            self.pos["p2"],
-            self.pos["p3"],
-            self.pos["p4"],
+            self.posiciones["j1_m1"],
+            self.posiciones["j1_m2"],
+            self.posiciones["j1_m3"],
+            self.posiciones["j2_m1"],
+            self.posiciones["j2_m2"],
+            self.posiciones["j2_m3"],
+            self.posiciones["p1"],
+            self.posiciones["p2"],
+            self.posiciones["p3"],
+            self.posiciones["p4"],
             len(self.tablero),
         ], dtype=np.int32)
 
@@ -221,7 +221,7 @@ class Juego(gym.Env):
                         self.inventario_j2.append(casilla)
 
     def marcar_ultimo_ocupante(self):
-        self.self.pos_nueva = self.posiciones[self.pieza_movida]
+        self.posiciones_nueva = self.posiciones[self.pieza_movida]
 
         # Solo muñecos de jugadores, no pingorotes
         if self.pieza_movida.startswith("j1_"):
@@ -232,7 +232,7 @@ class Juego(gym.Env):
             propietario = None
 
         if propietario is not None:
-            self.ultimo_ocupante[self.pos_nueva] = propietario
+            self.ultimo_ocupante[self.posiciones_nueva] = propietario
 
     def calcular_puntuacion_final(self, inventario):
         inventario = inventario.copy()
@@ -265,8 +265,8 @@ class Juego(gym.Env):
 
         # helper local: comprueba si un pingorote puede moverse (hay algún muñeco en su casilla)
         def _poder_mover_pingorote(ping_name):
-            pos_ping = self.pos[ping_name]
-            for nm, p in self.pos.items():
+            pos_ping = self.posiciones[ping_name]
+            for nm, p in self.posiciones.items():
                 if ("_m" in nm) and p == pos_ping:
                     return True
             return False
@@ -291,17 +291,17 @@ class Juego(gym.Env):
                     return None, None
 
             # origen antes de mover
-            origen = self.pos.get(pieza, None)
+            origen = self.posiciones.get(pieza, None)
             if origen is None:
                 # pieza inexistente (defensa) -> no mover
                 return None, None
 
             # aplicar movimiento
-            self.pos[pieza] += dado
+            self.posiciones[pieza] += dado
 
             # limitar a meta
-            if self.pos[pieza] >= self.meta_index:
-                self.pos[pieza] = self.meta_index
+            if self.posiciones[pieza] >= self.meta_index:
+                self.posiciones[pieza] = self.meta_index
 
             # marcar último ocupante de la nueva posición (se hará con la función de la clase si existe)
             # guardamos pieza movida para posible uso por otras funciones
@@ -368,14 +368,14 @@ class Juego(gym.Env):
                     self.marcar_ultimo_ocupante(pieza_movida)
                 except Exception:
                     # fallback: marcar directamente
-                    pos_nueva = self.pos[pieza_movida]
+                    pos_nueva = self.posiciones[pieza_movida]
                     propietario = "j1" if pieza_movida.startswith("j1_") else ("j2" if pieza_movida.startswith("j2_") else None)
                     if propietario is not None:
                         self.ultimo_ocupante[pos_nueva] = propietario
 
                 # comprobar si la casilla de origen quedó vacía (y no era META)
                 if posicion_origen is not None:
-                    ocupantes_en_origen = [n for n, p in self.pos.items() if p == posicion_origen]
+                    ocupantes_en_origen = [n for n, p in self.posiciones.items() if p == posicion_origen]
                     if len(ocupantes_en_origen) == 0 and posicion_origen != self.meta_index:
                         # reclamar casilla (si no reclamada ya)
                         if posicion_origen not in self.casillas_reclamadas:
@@ -394,9 +394,9 @@ class Juego(gym.Env):
 
         # ---- Después de las dos acciones: limpieza y comprobaciones ----
         # actualizar límites a meta para todas las piezas por precaución
-        for nombre in list(self.pos.keys()):
+        for nombre in list(self.posiciones.keys()):
             if nombre.startswith("j") or nombre.startswith("p"):
-                self.pos[nombre] = min(self.pos[nombre], self.meta_index)
+                self.posiciones[nombre] = min(self.posiciones[nombre], self.meta_index)
 
         # llamar a limpiar_tablero (se espera que devuelva (nuevas, nuevas_ocupadas, nuevo_ultimo, meta_index))
         try:
@@ -422,7 +422,7 @@ class Juego(gym.Env):
             self.verificar_meta()
         except Exception:
             # fallback: comprobación manual
-            for nombre, pos in self.pos.items():
+            for nombre, pos in self.posiciones.items():
                 if nombre.startswith("j") and pos >= self.meta_index:
                     # registrar llegada si existe la lista
                     if nombre not in getattr(self, "orden_llegada", []):
@@ -433,10 +433,10 @@ class Juego(gym.Env):
 
         # ---- Comprobar condiciones de victoria y calcular reward ----
         j1_win = self.todos_en_meta("j1") if hasattr(self, "todos_en_meta") else (
-            self.pos["j1_m1"] == self.meta_index and self.pos["j1_m2"] == self.meta_index and self.pos["j1_m3"] == self.meta_index
+            self.posiciones["j1_m1"] == self.meta_index and self.posiciones["j1_m2"] == self.meta_index and self.posiciones["j1_m3"] == self.meta_index
         )
         j2_win = self.todos_en_meta("j2") if hasattr(self, "todos_en_meta") else (
-            self.pos["j2_m1"] == self.meta_index and self.pos["j2_m2"] == self.meta_index and self.pos["j2_m3"] == self.meta_index
+            self.posiciones["j2_m1"] == self.meta_index and self.posiciones["j2_m2"] == self.meta_index and self.posiciones["j2_m3"] == self.meta_index
         )
 
         if j1_win and j2_win:
@@ -455,9 +455,7 @@ class Juego(gym.Env):
         obs = self.get_obs()
         return obs, float(reward), bool(self.done), False, info
 
-    
 #Comprobar que el entorno se ejecuta de manera correcta
-
 if __name__ == "__main__":  
     env = Juego()  # Crear el entorno
     estado = env.reset()
