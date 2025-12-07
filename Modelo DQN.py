@@ -17,7 +17,7 @@ epsilon_start = 1.0      # Probabilidad inicial de explorar
 epsilon_end = 0.05       # Probabilidad mínima de explorar
 epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
 memory_capacity = 10000  # Tamaño de la memoria de experiencias
-num_episodes = 10         # Número de partidas/episodios de entrenamiento
+num_episodes = 1         # Número de partidas/episodios de entrenamiento
 
 class Juego(gym.Env):
 
@@ -275,7 +275,7 @@ class Juego(gym.Env):
             mov = action_to_move.get(act_idx, None)
             if mov is None:
                 # acción inválida → no mover
-                return None, None
+                return None, None, -10
 
             # traducir a nombre de pieza según jugador
             if mov.startswith("m"):
@@ -287,13 +287,18 @@ class Juego(gym.Env):
             if pieza in ("p1","p2","p3","p4"):
                 if not _poder_mover_pingorote(pieza):
                     # pingorote no se puede mover -> no mover
-                    return None, None
-
+                    reward= -10
+                    return None, None, reward
+            
+            posicion_origen= self.posiciones.get(pieza, None)
+            if posicion_origen is None:
+                return None, None, -10
+            
             # origen antes de mover
             origen = self.posiciones.get(pieza, None)
             if origen is None:
                 # pieza inexistente (defensa) -> no mover
-                return None, None
+                return None, None, -10
 
             # aplicar movimiento
             self.posiciones[pieza] += dado
@@ -304,7 +309,7 @@ class Juego(gym.Env):
 
             # marcar último ocupante de la nueva posición (se hará con la función de la clase si existe)
             # guardamos pieza movida para posible uso por otras funciones
-            return pieza, origen
+            return pieza, origen, 0.0  # no reward por mover
 
         # ---- Determinar primer/segundo SOLO EN PRIMER TURNO ----
         if getattr(self, "first_turn", True):
@@ -357,7 +362,7 @@ class Juego(gym.Env):
                 act_idx = random.randint(0, 6)
 
             # ejecutar acción
-            pieza_movida, posicion_origen = _ejecutar_accion_jugador(turno_jugador, act_idx, dado)
+            pieza_movida, posicion_origen, reward = _ejecutar_accion_jugador(turno_jugador, act_idx, dado)
 
             # si se movió, marcar último ocupante y gestionar reclamación de casilla origen
             if pieza_movida is not None:
@@ -462,13 +467,13 @@ class Juego(gym.Env):
         return obs, 0.0, False, False, info 
 
 #Comprobar que el entorno se ejecuta de manera correcta
-#if __name__ == "__main__":  
- #   env = Juego()  # Crear el entorno
-  #  estado = env.reset()
-   # print("Estado inicial:", estado)
-    #done = False
-    #paso = 0
-    #while not done:
+if __name__ == "__main__":  
+    env = Juego()  # Crear el entorno
+    estado = env.reset()
+    print("Estado inicial:", estado)
+    done = False
+    paso = 0
+    while not done:
         paso += 1
         accion = env.action_space.sample()  # Acción aleatoria (0, 1 o 2)
         estado, recompensa, terminated, truncated, info = env.step(accion)
@@ -601,7 +606,7 @@ def entrenar():
         if episodio % 100 == 0:
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
 
-def evaluar(modelo, num_partidas=10):
+def evaluar(modelo, num_partidas=1):
     env = Juego()
     victorias = 0
     empates = 0
