@@ -10,9 +10,6 @@ import torch.optim as optim #Optimizador errores para predicciones futuras preci
 from collections import deque 
 import time
 
-import sys
-sys.stdout = open("log_entrenamiento.txt", "w", encoding="utf-8")
-
 # Hiperparámetros DQN
 batch_size = 64          # Cantidad de experiencias que tomamos de la memoria para entrenar
 gamma = 0.99             # Factor de descuento de recompensas futuras
@@ -85,7 +82,7 @@ class Juego(gym.Env):
         self.posiciones = {
             "j1_m1": 0, "j1_m2": 0, "j1_m3": 0,
             "j2_m1": 0, "j2_m2": 0, "j2_m3": 0,
-            "p1": 6, "p2": 7, "p3": 8, "p4": 9
+            "p1": 5, "p2": 6, "p3": 7, "p4": 8
         }
         
         self.jugador_llego_meta = {nombre: False for nombre in self.posiciones.keys()}
@@ -514,7 +511,6 @@ class ReplayMemory:
         return len(self.memory) 
     
 #Entrenamiento IA
-
 def seleccionar_accion(state, model, epsilon):
     state_tensor = torch.FloatTensor(state).unsqueeze(0) 
     
