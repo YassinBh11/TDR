@@ -17,7 +17,7 @@ epsilon_start = 1.0      # Probabilidad inicial de explorar
 epsilon_end = 0.05       # Probabilidad mínima de explorar
 epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
 memory_capacity = 10000  # Tamaño de la memoria de experiencias
-num_episodes = 10         # Número de partidas/episodios de entrenamiento
+num_episodes = 1         # Número de partidas/episodios de entrenamiento
 
 class Juego(gym.Env):
 
@@ -460,13 +460,13 @@ class Juego(gym.Env):
         return obs, 0.0, False, False, info 
 
 #Comprobar que el entorno se ejecuta de manera correcta
-#if __name__ == "__main__":  
-    #env = Juego()  # Crear el entorno
-    #estado = env.reset()
-    #print("Estado inicial:", estado)
-    #done = False
-    #paso = 0
-    #while not done:
+if __name__ == "__main__":  
+    env = Juego()  # Crear el entorno
+    estado = env.reset()
+    print("Estado inicial:", estado)
+    done = False
+    paso = 0
+    while not done:
         paso += 1
         accion = env.action_space.sample()  # Acción aleatoria (0, 1 o 2)
         estado, recompensa, terminated, truncated, info = env.step(accion)
@@ -600,7 +600,7 @@ def entrenar():
         if episodio % 100 == 0:
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
 
-def evaluar(modelo, num_partidas=10):
+def evaluar(modelo, num_partidas=1):
     env = Juego()
     victorias = 0
     empates = 0
