@@ -22,7 +22,6 @@ num_episodes = 10         # Número de partidas/episodios de entrenamiento
 class Juego(gym.Env):
 
     def __init__(self):
-
         # --- Variables generales de partida ---
         self.puntuacion1 = 0
         self.puntuacion2 = 0
@@ -54,7 +53,6 @@ class Juego(gym.Env):
         self.reset()
 
     def reset(self):
-        # tablero ejemplo (ajusta a tu tablero real)
         self.tablero = []
     
         self.inicio= []
@@ -176,8 +174,7 @@ class Juego(gym.Env):
 
     def verificar_meta(self):
         for nombre, pos in self.posiciones.items():
-            if nombre.startswith("j"): #SOLO MUÑECOS NO PINGOROTES
-                if pos >= self.meta_index:
+            if pos >= self.meta_index:
                     self.posiciones[nombre] = self.meta_index  
                     self.registrar_llegada(nombre)
 
@@ -185,8 +182,6 @@ class Juego(gym.Env):
         return all(self.posiciones[f"{jugador}_m{i}"] >= self.meta_index for i in range(1, 4))
 
     def aplicar_puntuacion(self, jugador, casilla):
-    
-        self.puntuacion1, self.puntuacion2, self.tablero
 
         # 1) casilla numérica
         if isinstance(casilla, int):
@@ -224,13 +219,13 @@ class Juego(gym.Env):
                     else:
                         self.inventario_j2.append(casilla)
 
-    def marcar_ultimo_ocupante(self):
-        self.posiciones_nueva = self.posiciones[self.pieza_movida]
+    def marcar_ultimo_ocupante(self, pieza_movida):
+        self.posiciones_nueva = self.posiciones[pieza_movida]
 
         # Solo muñecos de jugadores, no pingorotes
-        if self.pieza_movida.startswith("j1_"):
+        if pieza_movida.startswith("j1_"):
             propietario = "j1"
-        elif self.pieza_movida.startswith("j2_"):
+        elif pieza_movida.startswith("j2_"):
             propietario = "j2"
         else:
             propietario = None
@@ -442,17 +437,25 @@ class Juego(gym.Env):
         if j1_win or j2_win:
 
             # calcular puntuaciones finales reales
-            punt_j1 = self.calcular_puntuacion_final(self.inventario_j1)
-            punt_j2 = self.calcular_puntuacion_final(self.inventario_j2)
+            puntuacion_j1 = self.calcular_puntuacion_final(self.inventario_j1)
+            puntuacion_j2 = self.calcular_puntuacion_final(self.inventario_j2)
             
-            if punt_j1 >= 0:
-                reward = punt_j1 ** 2
+            recompensas = [5, 4, 3, 2, 1, 0]
+            for i, muñeco in enumerate(self.orden_llegada):
+                puntos = recompensas[min(i, len(recompensas) - 1)]
+                if muñeco.startswith("j1_"):
+                    puntuacion_j1 += puntos
+                elif muñeco.startswith("j2_"):
+                    puntuacion_j2 += puntos
+            
+            if puntuacion_j1 >= 0:
+                reward = puntuacion_j1 ** 2
             else:
-                reward = -1 * (punt_j1 ** 2)
+                reward = -1 * (puntuacion_j1 ** 2)
 
             self.done = True
             obs = self.get_obs()
-            return obs, float(reward), True, False, info
+            return obs, float(reward), self.done, False, info        
         obs = self.get_obs()
         return obs, 0.0, False, False, info 
 
@@ -479,7 +482,7 @@ class Juego(gym.Env):
 
 
 class Red_neuronal(nn.Module):
-    def __init__(self, input_size=11, hidden_size=64, output_size=5):
+    def __init__(self, input_size=11, hidden_size=64, output_size=7):
         super(Red_neuronal, self).__init__()
         # Capas totalmente conectadas
         self.fc1 = nn.Linear(input_size, hidden_size)
@@ -511,7 +514,7 @@ def seleccionar_accion(state, model, epsilon):
     state_tensor = torch.FloatTensor(state).unsqueeze(0) 
     
     if random.random() < epsilon:
-        return random.randint(0, 4) 
+        return random.randint(0, 6)  # Acción aleatoria
     else:
         # with torch.no_grad() indica que no vamos a calcular gradientes
         # Solo queremos obtener el valor Q, no entrenar todavía
@@ -615,7 +618,7 @@ def evaluar(modelo, num_partidas=10):
             done = terminated or truncated
             episodio_reward += reward
         
-        if episodio_reward > 5:
+        if episodio_reward > 0:
             victorias += 1
         elif episodio_reward == 0:
             empates += 1
@@ -628,5 +631,5 @@ def evaluar(modelo, num_partidas=10):
 
 inicio = time.time()
 entrenar()
-evaluar(model)  # Sin num_partidas=8 para usar default
+evaluar(model)
 print(f"Tiempo total entrenamiento: {time.time() - inicio:.2f} segundos")
