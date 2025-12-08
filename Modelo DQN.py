@@ -300,7 +300,7 @@ class Juego(gym.Env):
             mov = action_to_move.get(act_idx, None)
             if mov is None:
                 # acción inválida → no mover
-                return None, None, -1
+                return None, None, -5
 
             # traducir a nombre de pieza según jugador
             if mov.startswith("m"):
@@ -312,13 +312,13 @@ class Juego(gym.Env):
             if pieza in ("p1","p2","p3","p4"):
                 if not _poder_mover_pingorote(pieza):
                     # pingorote no se puede mover -> no mover
-                    return None, None, -1
+                    return None, None, -5
                 
             # origen antes de mover
             origen = self.posiciones.get(pieza, None)
             if origen is None:
                 # pieza inexistente (defensa) -> no mover
-                return None, None, -1
+                return None, None, -5
 
             # aplicar movimiento
             self.posiciones[pieza] += dado
@@ -553,7 +553,7 @@ def seleccionar_accion(state, model, epsilon, env):
             
         # Filtrar Q-values para acciones válidas  
         q_masked = q_values.clone()
-        q_masked[torch.tensor([i for i in range(7) if i not in acciones_validas], dtype=torch.long)] = -float('inf')
+        q_masked[torch.tensor([i for i in range(7) if i not in acciones_validas], dtype=torch.long)] = -1e9  # Asignar un valor muy bajo a acciones inválidas
          
         # torch.argmax(q_values) devuelve el índice de la acción con mayor Q-value
         return torch.argmax(q_masked).item()  # .item() convierte el tensor en un número entero normal
