@@ -330,8 +330,7 @@ def eleccion_muñecos2_ia(posiciones, meta_index, modelo_ia):
     # La IA elige acción
     accion_idx = seleccionar_accion_ia(estado, modelo_ia, posiciones, meta_index)
     movimiento = traducir_accion_ia(accion_idx)
-    
-    print(f"\n IAelige: {movimiento} (acción {accion_idx})")
+    print(f"\n IA elige: {movimiento} (acción {accion_idx})")
     
     return movimiento
 

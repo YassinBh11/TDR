@@ -17,7 +17,7 @@ epsilon_start = 1.0      # Probabilidad inicial de explorar
 epsilon_end = 0.05       # Probabilidad mínima de explorar
 epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
 memory_capacity = 10000  # Tamaño de la memoria de experiencias
-num_episodes = 100         # Número de partidas/episodios de entrenamiento
+num_episodes = 10         # Número de partidas/episodios de entrenamiento
 
 class Juego(gym.Env):
 
@@ -565,7 +565,7 @@ def entrenar():
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
 
 
-def evaluar(modelo, num_partidas=1):
+def evaluar(modelo, num_partidas=10):
     env = Juego()
     victorias = 0
     empates = 0
@@ -604,4 +604,4 @@ torch.save({
     'input_size': 11,
     'hidden_size': 64,
     'output_size': 7
-}, "modelo_dqn_estrategia_mental.pth")
+}, "modelo_dqn_estrategia_mental_10.pth")
