@@ -17,7 +17,7 @@ epsilon_start = 1.0
 epsilon_end = 0.05
 epsilon_decay = 0.9995
 memory_capacity = 100000
-num_episodes = 1000
+num_episodes = 10000
 
 class Juego(gym.Env):
 
@@ -671,39 +671,95 @@ def entrenar():
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward:.2f}")
 
 
-def evaluar(modelo, num_partidas=1000):
+def evaluar(modelo, num_partidas=10000):
+    """
+    Evalúa el modelo DQN contra el jugador aleatorio (J2).
+    Determina ganador basándose en la puntuación final del juego.
+    """
     env = Juego()
-    victorias = 0
+    victorias_j1 = 0
+    victorias_j2 = 0
     empates = 0
-    derrotas = 0
     
     for i in range(num_partidas):
         estado = env.reset()
         done = False
-        episodio_reward = 0
         
         while not done:
             estado_array = estado[0] if isinstance(estado, tuple) else estado
+            
+            # Usar el modelo sin exploración (epsilon=0)
             accion = seleccionar_accion(estado_array, modelo, epsilon=0.0, env=env)
+            
             estado, reward, terminated, truncated, info = env.step(accion)
             done = terminated or truncated
-            episodio_reward += reward
         
-        if episodio_reward > 0:
-            victorias += 1
-        elif episodio_reward == 0:
-            empates += 1
+        # Al finalizar el juego, calcular quién ganó basándose en puntuación
+        puntuacion_j1 = env.calcular_puntuacion_final(env.inventario_j1)
+        puntuacion_j2 = env.calcular_puntuacion_final(env.inventario_j2)
+        
+        # Añadir puntos por orden de llegada
+        recompensas = [5, 4, 3, 2, 1, 0]
+        for idx, muñeco in enumerate(env.orden_llegada):
+            puntos = recompensas[min(idx, len(recompensas) - 1)]
+            if muñeco.startswith("j1_"):
+                puntuacion_j1 += puntos
+            elif muñeco.startswith("j2_"):
+                puntuacion_j2 += puntos
+        
+        # Determinar ganador basándose en la diferencia
+        diferencia = puntuacion_j1 - puntuacion_j2
+        
+        if diferencia > 0:
+            victorias_j1 += 1
+        elif diferencia < 0:
+            victorias_j2 += 1
         else:
-            derrotas += 1
+            empates += 1
+        
+        # Mostrar progreso cada 100 partidas
+        if (i + 1) % 1 == 0:
+            print(f"Progreso: {i+1}/{num_partidas} partidas evaluadas...")
     
-    print(f"Evaluación ({num_partidas} partidas): {victorias}V, {empates}E, {derrotas}D")
-    win_rate = victorias / num_partidas * 100
-    print(f"Tasa de victorias: {win_rate:.1f}%")
+    # Resultados finales
+    print("\n" + "="*60)
+    print(f"RESULTADOS DE EVALUACIÓN ({num_partidas} partidas)")
+    print("="*60)
+    print(f"J1 (DQN):       {victorias_j1} victorias ({victorias_j1/num_partidas*100:.1f}%)")
+    print(f"J2 (Aleatorio): {victorias_j2} victorias ({victorias_j2/num_partidas*100:.1f}%)")
+    print(f"Empates:        {empates} ({empates/num_partidas*100:.1f}%)")
+    print("="*60)
+    
+    return {
+        'victorias_j1': victorias_j1,
+        'victorias_j2': victorias_j2,
+        'empates': empates,
+        'win_rate_j1': victorias_j1 / num_partidas * 100,
+        'win_rate_j2': victorias_j2 / num_partidas * 100
+    }
 
-inicio = time.time()
-entrenar()
-evaluar(model)
-print(f"Tiempo total entrenamiento: {time.time() - inicio:.2f} segundos")
+
+# Bloque principal
+if __name__ == "__main__":
+    inicio = time.time()
+    
+    print("Iniciando entrenamiento...")
+    entrenar()
+    
+    print("\nIniciando evaluación...")
+    resultados = evaluar(model)
+    
+    tiempo_total = time.time() - inicio
+    print(f"\nTiempo total de entrenamiento y evaluación: {tiempo_total:.2f} segundos")
+    
+    # Guardar el modelo
+    print("\nGuardando modelo...")
+    checkpoint = {
+        'model_state_dict': model.state_dict(),
+        'input_size': 11,
+        'hidden_size': 128,
+        'output_size': 7
+    }
 
 torch.save({
     'model_state_dict': model.state_dict(),

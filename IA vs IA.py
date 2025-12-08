@@ -128,10 +128,10 @@ print(titulo)
 # MODO IA vs IA
 print("\n Modo: IA vs IA")
 print("\n Cargando IA 1...")
-modelo_ia_1 = cargar_modelo_ia("modelo_dqn_estrategia_mental_100.pth") #AQUI MARCOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOS
+modelo_ia_1 = cargar_modelo_ia("modelo_dqn_estrategia_mental_1000.pth") #AQUI MARCOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOS
 
 print("\n Cargando IA 2...")
-modelo_ia_2 = cargar_modelo_ia("modelo_dqn_estrategia_mental_1000.pth") #AQUI MARCOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOS
+modelo_ia_2 = cargar_modelo_ia("modelo_dqn_100k.pth") #AQUI MARCOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOS
 
 if modelo_ia_1 is None or modelo_ia_2 is None:
     print("\nError: No se pudieron cargar ambos modelos. Saliendo...")
