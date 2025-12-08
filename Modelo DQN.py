@@ -17,7 +17,7 @@ epsilon_start = 1.0      # Probabilidad inicial de explorar
 epsilon_end = 0.05       # Probabilidad mínima de explorar
 epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
 memory_capacity = 10000  # Tamaño de la memoria de experiencias
-num_episodes = 1         # Número de partidas/episodios de entrenamiento
+num_episodes = 10         # Número de partidas/episodios de entrenamiento
 
 class Juego(gym.Env):
 
@@ -251,17 +251,42 @@ class Juego(gym.Env):
         puntuacion = sum(v for v in inventario if isinstance(v, int))
         return puntuacion
 
-    def step(self, action):
+    def acciones_validas(self,jugador):
+            action_to_move = {
+                0: "m1", 1: "m2", 2: "m3",
+                3: "p1", 4: "p2", 5: "p3", 6: "p4"
+            }
 
+            valid = []
+            for act_idx, mov in action_to_move.items():
+                if mov.startswith("m"):
+                    pieza = f"{jugador}_{mov}"
+                else:
+                    pieza = mov
+                if pieza in ("p1","p2","p3","p4"):
+                    if self.posiciones[pieza] is None:
+                        continue
+                    pos_ping = self.posiciones[pieza]
+                    puede_mover = any(
+                        ("_m" in nm) and (p == pos_ping)
+                        for nm, p in self.posiciones.items()
+                    )
+                    if puede_mover:
+                        valid.append(act_idx)
+                    continue
+                valid.append(act_idx)
+            return valid
+        
+    def step(self, action):
         if self.done:
             return self.get_obs(), 0.0, True, False, {}
 
         # ---- mapping acción -> nombre movimiento (para J1 / J2) ----
         action_to_move = {
-            0: "m1", 1: "m2", 2: "m3",
-            3: "p1", 4: "p2", 5: "p3", 6: "p4"
-        }
-
+                0: "m1", 1: "m2", 2: "m3",
+                3: "p1", 4: "p2", 5: "p3", 6: "p4"
+            }
+        
         # helper local: comprueba si un pingorote puede moverse (hay algún muñeco en su casilla)
         def _poder_mover_pingorote(ping_name):
             pos_ping = self.posiciones[ping_name]
@@ -275,7 +300,7 @@ class Juego(gym.Env):
             mov = action_to_move.get(act_idx, None)
             if mov is None:
                 # acción inválida → no mover
-                return None, None, -10
+                return None, None, 0.0
 
             # traducir a nombre de pieza según jugador
             if mov.startswith("m"):
@@ -287,18 +312,13 @@ class Juego(gym.Env):
             if pieza in ("p1","p2","p3","p4"):
                 if not _poder_mover_pingorote(pieza):
                     # pingorote no se puede mover -> no mover
-                    reward= -10
-                    return None, None, reward
-            
-            posicion_origen= self.posiciones.get(pieza, None)
-            if posicion_origen is None:
-                return None, None, -10
-            
+                    return None, None, 0.0
+                
             # origen antes de mover
             origen = self.posiciones.get(pieza, None)
             if origen is None:
                 # pieza inexistente (defensa) -> no mover
-                return None, None, -10
+                return None, None, 0.0
 
             # aplicar movimiento
             self.posiciones[pieza] += dado
@@ -516,8 +536,10 @@ class ReplayMemory:
         return len(self.memory) 
     
 #Entrenamiento IA
-def seleccionar_accion(state, model, epsilon):
+def seleccionar_accion(state, model, epsilon, env):
     state_tensor = torch.FloatTensor(state).unsqueeze(0) 
+    
+    acciones_validas = env.acciones_validas("j1")
     
     if random.random() < epsilon:
         return random.randint(0, 6)  # Acción aleatoria
@@ -527,10 +549,14 @@ def seleccionar_accion(state, model, epsilon):
         
         with torch.no_grad():  
             # Pasamos el estado por la red y obtenemos los Q-values
-            q_values = model(state_tensor)  
+            q_values = model(state_tensor).squeeze(0) #Q-values para cada acción
             
+        # Filtrar Q-values para acciones válidas  
+        q_masked = q_values.clone()
+        q_masked[torch.tensor([i for i in range(7) if i not in acciones_validas], dtype=torch.long)] = -float('inf')
+         
         # torch.argmax(q_values) devuelve el índice de la acción con mayor Q-value
-        return torch.argmax(q_values).item()  # .item() convierte el tensor en un número entero normal
+        return torch.argmax(q_masked).item()  # .item() convierte el tensor en un número entero normal
 
 
 model = Red_neuronal()
@@ -555,7 +581,7 @@ def entrenar():
             estado_array = estado[0] if isinstance(estado, tuple) else estado
             
             # Seleccionar acción
-            accion = seleccionar_accion(estado_array, model, epsilon)
+            accion = seleccionar_accion(estado_array, model, epsilon, env)
             ronda += 1
             
             # Ejecutar acción
@@ -606,36 +632,58 @@ def entrenar():
         if episodio % 100 == 0:
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
 
-def evaluar(modelo, num_partidas=1):
-    env = Juego()
+def evaluar(modelo, env, episodios=10):
+    modelo.eval()  # modo evaluación
+
     victorias = 0
-    empates = 0
     derrotas = 0
-    
-    for i in range(num_partidas):
-        estado = env.reset()
+    empates = 0
+
+    for _ in range(episodios):
+        obs, _ = env.reset()
         done = False
-        episodio_reward = 0
-        
+
         while not done:
-            estado_array = estado[0] if isinstance(estado, tuple) else estado
-            accion = seleccionar_accion(estado_array, modelo, epsilon=0.0)
-            estado, reward, terminated, truncated, info = env.step(accion)
-            done = terminated or truncated
-            episodio_reward += reward
-        
-        if episodio_reward > 0:
+
+            # --- convertir obs a tensor ---
+            obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+
+            with torch.no_grad():
+                q_values = modelo(obs_t)          # pasa por la red
+                action = torch.argmax(q_values).item()   # acción con mayor valor Q
+
+            # avanzar el entorno
+            obs, reward, done, _, info = env.step(action)
+
+        # --- SOLO reward final ---
+        if reward > 0:
             victorias += 1
-        elif episodio_reward == 0:
-            empates += 1
-        else:
+        elif reward < 0:
             derrotas += 1
-    
-    print(f"Evaluación ({num_partidas} partidas): {victorias}V, {empates}E, {derrotas}D")
-    win_rate = victorias / num_partidas * 100
-    print(f"Tasa de victorias: {win_rate:.1f}%")
+        elif reward == 0:
+            empates += 1
+
+    total = victorias + derrotas + empates
+    winrate = victorias / total if total > 0 else 0
+
+    print("\n----- RESULTADOS EVALUACIÓN -----")
+    print(f"Episodios:      {total}")
+    print(f"Victorias J1:   {victorias}")
+    print(f"Derrotas J1:    {derrotas}")
+    print(f"Empates:        {empates}")
+    print(f"Winrate:        {winrate:.2%}")
+
+    return {
+        "episodios": total,
+        "victorias": victorias,
+        "derrotas": derrotas,
+        "empates": empates,
+        "winrate": winrate
+    }
+
 
 inicio = time.time()
 entrenar()
-evaluar(model)
+env_eval = Juego()
+evaluar(model, env_eval)
 print(f"Tiempo total entrenamiento: {time.time() - inicio:.2f} segundos")
