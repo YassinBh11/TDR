@@ -17,7 +17,7 @@ epsilon_start = 1.0      # Probabilidad inicial de explorar
 epsilon_end = 0.05       # Probabilidad mínima de explorar
 epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
 memory_capacity = 10000  # Tamaño de la memoria de experiencias
-num_episodes = 10         # Número de partidas/episodios de entrenamiento
+num_episodes = 100         # Número de partidas/episodios de entrenamiento
 
 class Juego(gym.Env):
 
@@ -487,13 +487,13 @@ class Juego(gym.Env):
         return obs, 0.0, False, False, info 
 
 #Comprobar que el entorno se ejecuta de manera correcta
-if __name__ == "__main__":  
-    env = Juego()  # Crear el entorno
-    estado = env.reset()
-    print("Estado inicial:", estado)
-    done = False
-    paso = 0
-    while not done:
+#if __name__ == "__main__":  
+#    env = Juego()  # Crear el entorno
+#    estado = env.reset()
+#    print("Estado inicial:", estado)
+#    done = False
+#    paso = 0
+#    while not done:
         paso += 1
         accion = env.action_space.sample()  # Acción aleatoria (0, 1 o 2)
         estado, recompensa, terminated, truncated, info = env.step(accion)
@@ -632,58 +632,36 @@ def entrenar():
         if episodio % 100 == 0:
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
 
-def evaluar(modelo, env, episodios=10):
-    modelo.eval()  # modo evaluación
-
+def evaluar(modelo, num_partidas=100):
+    env = Juego()
     victorias = 0
-    derrotas = 0
     empates = 0
-
-    for _ in range(episodios):
-        obs, _ = env.reset()
+    derrotas = 0
+    
+    for i in range(num_partidas):
+        estado = env.reset()
         done = False
-
+        episodio_reward = 0
+        
         while not done:
-
-            # --- convertir obs a tensor ---
-            obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
-
-            with torch.no_grad():
-                q_values = modelo(obs_t)          # pasa por la red
-                action = torch.argmax(q_values).item()   # acción con mayor valor Q
-
-            # avanzar el entorno
-            obs, reward, done, _, info = env.step(action)
-
-        # --- SOLO reward final ---
-        if reward > 0:
+            estado_array = estado[0] if isinstance(estado, tuple) else estado
+            accion = seleccionar_accion(estado_array, modelo, epsilon=0.0, env=env)
+            estado, reward, terminated, truncated, info = env.step(accion)
+            done = terminated or truncated
+            episodio_reward += reward
+        
+        if episodio_reward > 0:
             victorias += 1
-        elif reward < 0:
-            derrotas += 1
-        elif reward == 0:
+        elif episodio_reward == 0:
             empates += 1
-
-    total = victorias + derrotas + empates
-    winrate = victorias / total if total > 0 else 0
-
-    print("\n----- RESULTADOS EVALUACIÓN -----")
-    print(f"Episodios:      {total}")
-    print(f"Victorias J1:   {victorias}")
-    print(f"Derrotas J1:    {derrotas}")
-    print(f"Empates:        {empates}")
-    print(f"Winrate:        {winrate:.2%}")
-
-    return {
-        "episodios": total,
-        "victorias": victorias,
-        "derrotas": derrotas,
-        "empates": empates,
-        "winrate": winrate
-    }
-
+        else:
+            derrotas += 1
+    
+    print(f"Evaluación ({num_partidas} partidas): {victorias}V, {empates}E, {derrotas}D")
+    win_rate = victorias / num_partidas * 100
+    print(f"Tasa de victorias: {win_rate:.1f}%")
 
 inicio = time.time()
 entrenar()
-env_eval = Juego()
-evaluar(model, env_eval)
+evaluar(model)
 print(f"Tiempo total entrenamiento: {time.time() - inicio:.2f} segundos")
