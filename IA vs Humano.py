@@ -101,7 +101,7 @@ def traducir_accion_ia(accion_idx):
 
 
 # ===== CARGAR EL MODELO =====
-def cargar_modelo_ia(ruta="modelo_dqn_estrategia_mental_10.pth"):
+def cargar_modelo_ia(ruta="modelo_dqn_100k.pth"):
     """Carga el modelo entrenado"""
     try:
         checkpoint = torch.load(ruta)
@@ -131,7 +131,7 @@ modo_juego = input("¿Contra quién quieres jugar?\n1. Jugador 2 humano\n2. IA (
 modelo_ia = None
 if modo_juego == "2":
     print("\n Cargando IA entrenada...")
-    modelo_ia = cargar_modelo_ia("modelo_dqn_estrategia_mental_10.pth")
+    modelo_ia = cargar_modelo_ia("modelo_dqn_100k.pth")
     if modelo_ia is None:
         print(" No se pudo cargar la IA. Jugando contra J2 humano.")
         jugador2 = "j2"
@@ -798,7 +798,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             verificar_meta(posiciones, meta_index)
             mostrar_tablero(tablero, posiciones)
             mostrar_inventarios()
-    time.sleep(2)
     limpiar()
     mostrar_tablero(tablero, posiciones)
     mostrar_inventarios()
