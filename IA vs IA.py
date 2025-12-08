@@ -101,7 +101,7 @@ def traducir_accion_ia(accion_idx):
 
 
 # ===== CARGAR EL MODELO =====
-def cargar_modelo_ia(ruta="modelo_dqn_estrategia_mental_10.pth"):
+def cargar_modelo_ia(ruta="modelo_dqn_estrategia_mental_10.pth"): #este no importa, por mucho que ponga esa ruta, es la ruta por defecto, por si solo queremos escribir la funcion asi: cargar:_modelo_ia() sin nada dentro
     """Carga el modelo entrenado"""
     try:
         checkpoint = torch.load(ruta)
@@ -128,17 +128,17 @@ print(titulo)
 # MODO IA vs IA
 print("\n Modo: IA vs IA")
 print("\n Cargando IA 1...")
-modelo_ia_1 = cargar_modelo_ia("modelo_dqn_estrategia_mental_10.pth")
+modelo_ia_1 = cargar_modelo_ia("modelo_dqn_estrategia_mental_100.pth") #AQUI MARCOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOS
 
 print("\n Cargando IA 2...")
-modelo_ia_2 = cargar_modelo_ia("modelo_dqn_estrategia_mental_100.pth")
+modelo_ia_2 = cargar_modelo_ia("modelo_dqn_estrategia_mental_1000.pth") #AQUI MARCOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOS
 
 if modelo_ia_1 is None or modelo_ia_2 is None:
     print("\nError: No se pudieron cargar ambos modelos. Saliendo...")
     exit()
 
-jugador1 = "IA_1"
-jugador2 = "IA_2"
+jugador1 = "IA_Pequeña"
+jugador2 = "IA_Grande"
 
 def limpiar():
     os.system("cls" if os.name=="nt" else "clear")

@@ -1,23 +1,23 @@
 import gymnasium as gym
 from gymnasium import spaces
-import numpy as np #Biblioteca para calculos complejos y aplicacion de formulas
+import numpy as np
 import random
 
-import torch #Red Neuronal
+import torch
 import torch.nn as nn
-import torch.optim as optim #Optimizador errores para predicciones futuras precisas
+import torch.optim as optim
 
 from collections import deque 
 import time
 
 # Hiperparámetros DQN
-batch_size = 64          # Cantidad de experiencias que tomamos de la memoria para entrenar
-gamma = 0.99             # Factor de descuento de recompensas futuras
-epsilon_start = 1.0      # Probabilidad inicial de explorar
-epsilon_end = 0.05       # Probabilidad mínima de explorar
-epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
-memory_capacity = 10000  # Tamaño de la memoria de experiencias
-num_episodes = 10         # Número de partidas/episodios de entrenamiento
+batch_size = 128
+gamma = 0.999
+epsilon_start = 1.0
+epsilon_end = 0.05
+epsilon_decay = 0.9995
+memory_capacity = 100000
+num_episodes = 1000
 
 class Juego(gym.Env):
 
@@ -230,16 +230,13 @@ class Juego(gym.Env):
         valid = []
         for act_idx, mov in action_to_move.items():
             if mov.startswith("m"):
-                # Siempre se pueden mover muñecos
                 valid.append(act_idx)
             else:
-                # Pingorote: verificar si hay algún muñeco en su posición
                 pieza = mov
                 pos_ping = self.posiciones.get(pieza)
                 if pos_ping is None:
                     continue
                 
-                # Verificar si hay algún muñeco del jugador en esa casilla
                 puede_mover = False
                 for nm, p in self.posiciones.items():
                     if nm.startswith(f"{jugador}_m") and p == pos_ping:
@@ -250,6 +247,81 @@ class Juego(gym.Env):
                     valid.append(act_idx)
         
         return valid
+    
+    def obtener_negativos_en_inventario(self, jugador):
+        """Devuelve lista de valores negativos en el inventario del jugador"""
+        inventario = self.inventario_j1 if jugador == "j1" else self.inventario_j2
+        return [v for v in inventario if isinstance(v, int) and v < 0]
+
+    def calcular_reward_casilla(self, jugador, casilla_reclamada):
+        """
+        ESTRATEGIA AJUSTADA:
+        - Penalización baja por pingorotes movidos.
+        - SUERTE es más valiosa cuanto mayor sea el negativo en el inventario.
+        - Se penaliza la negativa MUCHO si no hay SUERTE, pero el incentivo aumenta.
+        """
+        if casilla_reclamada == "INICIO" or casilla_reclamada == "META":
+            return 0.0
+        
+        tiene_suerte = (self.tokens_suerte_j1 > 0) if jugador == "j1" else (self.tokens_suerte_j2 > 0)
+        negativos = self.obtener_negativos_en_inventario(jugador)
+        
+        # ------------------------------------------------------------
+        # CASO 1: Casilla SUERTE - PRIORIDAD CONDICIONAL
+        # ------------------------------------------------------------
+        if casilla_reclamada == "SUERTE":
+            reward_base = 2000.0  # Un valor base respetable
+            
+            if negativos:
+                mayor_negativo = min(negativos) # El más negativo (ej: -5 es menor que -1)
+                valor_absoluto_negativo = abs(mayor_negativo)
+                
+                # Bonus MASIVO: Valor solo si el negativo es grande (>= -4)
+                if valor_absoluto_negativo >= 4:
+                    # Multiplicador basado en la magnitud del negativo (-4 o -5)
+                    # El combo es MUY valioso: e.g., si es -5, bonus = 5 * 8 = 40.0
+                    bonus_combo = valor_absoluto_negativo * 120.0 
+                    return reward_base + bonus_combo
+                else:
+                    # El negativo no es lo suficientemente grande (ej: -1, -2, -3)
+                    # Recompensa media para motivar la acumulación de SUERTE.
+                    return reward_base - 4000.0
+            else:
+                # Aún sin negativos, SUERTE es valiosa (protección futura)
+                return reward_base
+        
+        # ------------------------------------------------------------
+        # CASO 2: Casilla numérica
+        # ------------------------------------------------------------
+        if isinstance(casilla_reclamada, int):
+            if casilla_reclamada > 0:
+                # Positiva: reward directo (sin cambios)
+                return float(casilla_reclamada) * 1000
+            else:
+                # Negativa - aquí está la clave
+                if tiene_suerte:
+                    # CON SUERTE: Valor de inversión (se convertirá en positiva)
+                    return abs(casilla_reclamada) * (50.0)  # Recompensa alta por la conversión
+                else:
+                    # SIN SUERTE: Penalización para desincentivar, pero el "incentivo de aguante" es la clave
+                    
+                    valor_absoluto = abs(casilla_reclamada)
+                    penalizacion_brutal = float(casilla_reclamada) * 100.0 # Penalización base (ej: -5 * 3 = -15)
+                    
+                    # INCENTIVO POR AGUANTE: Solo si es muy negativo (>= -4),
+                    # se le da un pequeño "premio" positivo por el potencial futuro.
+                    if valor_absoluto >= 4:
+                        # Recompensa para aguantar un gran negativo y buscar SUERTE
+                        incentivo_aguante = valor_absoluto # Ej: -5 obtiene +7.5 de incentivo
+                    else:
+                        incentivo_aguante = 0.0
+                    
+                    # La penalización se reduce si el negativo es grande
+                    # Ej: -5 sin suerte: -15 + 7.5 = -7.5 (Menos malo que antes)
+                    # Ej: -1 sin suerte: -3 + 0.0 = -3.0 (Malísimo)
+                    return penalizacion_brutal + incentivo_aguante
+        
+        return 0.0
         
     def step(self, action):
         if self.done:
@@ -267,41 +339,30 @@ class Juego(gym.Env):
                     return True
             return False
 
-        # helper: ejecutar una acción numérica para un jugador dado (j1/j2)
         def _ejecutar_accion_jugador(jugador, act_idx, dado):
             mov = action_to_move.get(act_idx, None)
             if mov is None:
-                # acción inválida → no mover
-                return None, None, -100
+                return None, None, -1
 
-            # traducir a nombre de pieza según jugador
             if mov.startswith("m"):
-                pieza = f"{jugador}_{mov}"  # ej. j1_m1
+                pieza = f"{jugador}_{mov}"
             else:
-                pieza = mov  # p1..p4 (pingorotes son globales)
+                pieza = mov
 
-            # Si es pingorote, comprobar permiso
             if pieza in ("p1","p2","p3","p4"):
                 if not _poder_mover_pingorote(pieza):
-                    # pingorote no se puede mover -> no mover
-                    return None, None, -100
+                    return None, None, -1
                 
-            # origen antes de mover
             origen = self.posiciones.get(pieza, None)
             if origen is None:
-                # pieza inexistente (defensa) -> no mover
-                return None, None, -100
+                return None, None, -1
 
-            # aplicar movimiento
             self.posiciones[pieza] += dado
 
-            # limitar a meta
             if self.posiciones[pieza] >= self.meta_index:
                 self.posiciones[pieza] = self.meta_index
 
-            # marcar último ocupante de la nueva posición (se hará con la función de la clase si existe)
-            # guardamos pieza movida para posible uso por otras funciones
-            return pieza, origen, 0.0  # no reward por mover
+            return pieza, origen, 0.0
 
         # Determinar orden primera vez
         if getattr(self, "first_turn", True):
@@ -324,12 +385,11 @@ class Juego(gym.Env):
             self.first_turn = True
 
         info = {"moves": []}
+        reward_acumulado_j1 = 0.0
 
-        # para cada jugador en el orden [primero, segundo]
+        # Para cada jugador en el orden [primero, segundo]
         for turno_jugador in (self.primero, self.segundo):
-            # elegir dado: si es el primer turno, usar los dados guardados; si no, tirar
             if getattr(self, "first_turn", False):
-                # usar dados guardados dependientes de jugador
                 if turno_jugador == "j1":
                     dado = getattr(self, "_first_d1", random.randint(1, 6))
                 else:
@@ -337,19 +397,20 @@ class Juego(gym.Env):
             else:
                 dado = random.randint(1, 6)
 
-            # decidir acción a ejecutar
             if turno_jugador == "j1":
-                # la acción del agente viene del argumento `action`
                 act_idx = int(action)
             else:
-                # rival: acción válida aleatoria
                 acciones_validas_rival = self.acciones_validas("j2")
                 if acciones_validas_rival:
                     act_idx = random.choice(acciones_validas_rival)
                 else:
-                    act_idx = 0  # Mover primer muñeco por defecto
+                    act_idx = 0
 
-            # ejecutar acción
+            # Guardar estado ANTES de la acción
+            inventario_anterior = self.inventario_j1.copy() if turno_jugador == "j1" else self.inventario_j2.copy()
+            tokens_suerte_anterior = self.tokens_suerte_j1 if turno_jugador == "j1" else self.tokens_suerte_j2
+            negativos_anterior = self.obtener_negativos_en_inventario(turno_jugador)
+
             pieza_movida, posicion_origen, reward = _ejecutar_accion_jugador(turno_jugador, act_idx, dado)
 
             if pieza_movida is not None:
@@ -361,17 +422,69 @@ class Juego(gym.Env):
                     if propietario is not None:
                         self.ultimo_ocupante[pos_nueva] = propietario
 
+                # Reclamar casilla si se dejó vacía
                 if posicion_origen is not None:
                     ocupantes_en_origen = [n for n, p in self.posiciones.items() if p == posicion_origen]
                     if len(ocupantes_en_origen) == 0 and posicion_origen != self.meta_index:
                         if posicion_origen not in self.casillas_reclamadas:
-                            valor = self.tablero[posicion_origen]
-                            if valor not in ("INICIO", "META"):
-                                owner_inv = self.inventario_j1 if pieza_movida.startswith("j1_") else self.inventario_j2
-                                owner_inv.append(valor)
-                                self.casillas_reclamadas[posicion_origen] = "j1" if pieza_movida.startswith("j1_") else "j2"
+                            valor_casilla = self.tablero[posicion_origen]
+                            if valor_casilla not in ("INICIO", "META"):
+                                if turno_jugador == "j1":
+                                    self.inventario_j1.append(valor_casilla)
+                                    if valor_casilla == "SUERTE":
+                                        self.tokens_suerte_j1 += 1
+                                else:
+                                    self.inventario_j2.append(valor_casilla)
+                                    if valor_casilla == "SUERTE":
+                                        self.tokens_suerte_j2 += 1
+                                
+                                self.casillas_reclamadas[posicion_origen] = turno_jugador
 
-            info["moves"].append({"player": turno_jugador, "action": act_idx, "piece": pieza_movida, "die": dado})
+            # Detectar qué casilla se reclamó
+            if turno_jugador == "j1":
+                inventario_actual = self.inventario_j1
+            else:
+                inventario_actual = self.inventario_j2
+            
+            casilla_reclamada = None
+            if len(inventario_actual) > len(inventario_anterior):
+                casilla_reclamada = inventario_actual[-1]
+            
+            # Calcular reward ANTES de actualizar tokens
+            if casilla_reclamada is not None:
+                # Temporalmente restaurar estado anterior para cálculo correcto
+                if turno_jugador == "j1":
+                    self.tokens_suerte_j1 = tokens_suerte_anterior
+                else:
+                    self.tokens_suerte_j2 = tokens_suerte_anterior
+                
+                # Eliminar la última casilla temporalmente para calcular reward
+                inventario_actual.pop()
+                
+                reward_casilla = self.calcular_reward_casilla(turno_jugador, casilla_reclamada)
+                
+                # Restaurar inventario
+                inventario_actual.append(casilla_reclamada)
+                
+                # Restaurar tokens actuales
+                if turno_jugador == "j1":
+                    if casilla_reclamada == "SUERTE":
+                        self.tokens_suerte_j1 = tokens_suerte_anterior + 1
+                else:
+                    if casilla_reclamada == "SUERTE":
+                        self.tokens_suerte_j2 = tokens_suerte_anterior + 1
+                
+                if turno_jugador == "j1":
+                    reward_acumulado_j1 += reward_casilla
+
+            info["moves"].append({
+                "player": turno_jugador, 
+                "action": act_idx, 
+                "piece": pieza_movida, 
+                "die": dado,
+                "casilla_reclamada": casilla_reclamada,
+                "reward_turno": reward_casilla if casilla_reclamada and turno_jugador == "j1" else 0
+            })
 
         if getattr(self, "first_turn", False):
             self.first_turn = False
@@ -408,6 +521,8 @@ class Juego(gym.Env):
         j1_win = self.todos_en_meta("j1")
         j2_win = self.todos_en_meta("j2")
 
+        reward_final = reward_acumulado_j1
+
         if j1_win or j2_win:
             puntuacion_j1 = self.calcular_puntuacion_final(self.inventario_j1)
             puntuacion_j2 = self.calcular_puntuacion_final(self.inventario_j2)
@@ -423,19 +538,20 @@ class Juego(gym.Env):
             diferencia = puntuacion_j1 - puntuacion_j2
             
             if diferencia >= 0:
-                reward = puntuacion_j1 ** 2
+                reward_final += puntuacion_j1 * 100
             else:
-                reward = -1 * (diferencia ** 2)
+                reward_final += -1 * (diferencia * 100)
 
             self.done = True
             obs = self.get_obs()
-            return obs, float(reward), self.done, False, info        
+            return obs, float(reward_final), self.done, False, info        
+        
         obs = self.get_obs()
-        return obs, 0.0, False, False, info 
+        return obs, float(reward_final), False, False, info 
 
 
 class Red_neuronal(nn.Module):
-    def __init__(self, input_size=11, hidden_size=64, output_size=7):
+    def __init__(self, input_size=11, hidden_size=128, output_size=7):
         super(Red_neuronal, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -462,43 +578,35 @@ class ReplayMemory:
         return len(self.memory) 
     
 
-#Entrenamiento IA
 def seleccionar_accion(state, model, epsilon, env):
     state_tensor = torch.FloatTensor(state).unsqueeze(0) 
     
     acciones_validas = env.acciones_validas("j1")
     
-    # Si no hay acciones válidas, mover primer muñeco por defecto
     if not acciones_validas:
         return 0
     
     if random.random() < epsilon:
-        return random.choice(acciones_validas)  # Exploración: acción válida aleatoria
+        return random.choice(acciones_validas)
     else:
-        # with torch.no_grad() indica que no vamos a calcular gradientes
-        # Solo queremos obtener el valor Q, no entrenar todavía
-        
         with torch.no_grad():  
-            # Pasamos el estado por la red y obtenemos los Q-values
-            q_values = model(state_tensor).squeeze(0) #Q-values para cada acción
+            q_values = model(state_tensor).squeeze(0)
         
-        # Obtener Q-values solo de acciones válidas y elegir la mejor
         q_validas = [(i, q_values[i].item()) for i in acciones_validas]
         mejor_accion = max(q_validas, key=lambda x: x[1])[0]
          
-        # torch.argmax(q_values) devuelve el índice de la acción con mayor Q-value
-        return mejor_accion  # .item() convierte el tensor en un número entero normal
+        return mejor_accion
 
 
 model = Red_neuronal()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.0003)
 memory = ReplayMemory(memory_capacity)
 criterion = nn.MSELoss()
 epsilon = epsilon_start
 
 
 def entrenar():
-    global epsilon  # Para actualizar epsilon
+    global epsilon
     model.train()
     
     for episodio in range(num_episodes):
@@ -509,32 +617,32 @@ def entrenar():
         ronda = 0
         
         while not done:
-            # Extraer array de observación
             estado_array = estado[0] if isinstance(estado, tuple) else estado
             
-            # Seleccionar acción
             accion = seleccionar_accion(estado_array, model, epsilon, env)
             ronda += 1
             
-            # Ejecutar acción
             next_state, reward, terminated, truncated, info = env.step(accion)
             next_state_array = next_state[0] if isinstance(next_state, tuple) else next_state
             done = terminated or truncated
             
-            # Guardar experiencia
             memory.push(estado_array, accion, reward, next_state_array, done)
             
-            # Actualizar estado
             estado = next_state
             total_reward += reward
             
-            # Debug (opcional, comenta para acelerar)
-            print(f"Episodio {episodio+1}, Ronda {ronda}: Acción={accion}, Reward={reward:.1f}")
+            # Debug mejorado
+            if "moves" in info and len(info["moves"]) > 0:
+                for move in info["moves"]:
+                    if move["player"] == "j1" and move.get("casilla_reclamada"):
+                        cas = move["casilla_reclamada"]
+                        rew = move.get("reward_turno", 0)
+                        neg_count = len([x for x in env.inventario_j1 if isinstance(x, int) and x < 0])
+                        sue_count = env.tokens_suerte_j1
+                        print(f"Ep{episodio+1} R{ronda}: J1 reclamó {cas} → Reward={rew:.1f} | Inv: {neg_count} neg, {sue_count} suerte")
         
-        # Decaimiento epsilon
         epsilon = max(epsilon_end, epsilon * epsilon_decay)
         
-        # Entrenamiento si hay suficientes experiencias
         if len(memory) >= batch_size:
             batch = memory.sample(batch_size)
             states, actions, rewards, next_states, dones = zip(*batch)
@@ -545,27 +653,25 @@ def entrenar():
             next_states = torch.FloatTensor(np.array(next_states, dtype=np.float32))
             dones = torch.FloatTensor(dones)
             
-            # Calcular Q values actuales
             q_values = model(states).gather(1, actions).squeeze()
             
-            # Calcular Q targets
             with torch.no_grad():
                 next_q_values = model(next_states).max(1)[0]
                 q_targets = rewards + gamma * next_q_values * (1 - dones)
             
-            # Backpropagation
             loss = criterion(q_values, q_targets)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
-            print(f"Episodio {episodio+1}: Loss={loss.item():.4f}, Epsilon={epsilon:.3f}")
+            if episodio % 10 == 0:
+                print(f"Episodio {episodio+1}: Loss={loss.item():.4f}, Epsilon={epsilon:.3f}")
         
         if episodio % 100 == 0:
-            print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
+            print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward:.2f}")
 
 
-def evaluar(modelo, num_partidas=10):
+def evaluar(modelo, num_partidas=1000):
     env = Juego()
     victorias = 0
     empates = 0
@@ -602,6 +708,6 @@ print(f"Tiempo total entrenamiento: {time.time() - inicio:.2f} segundos")
 torch.save({
     'model_state_dict': model.state_dict(),
     'input_size': 11,
-    'hidden_size': 64,
+    'hidden_size': 128,
     'output_size': 7
-}, "modelo_dqn_estrategia_mental_10.pth")
+}, "modelo_dqn_estrategia_mental_1000.pth")
