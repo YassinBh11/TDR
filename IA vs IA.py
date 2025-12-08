@@ -21,8 +21,8 @@ class Red_neuronal(nn.Module):
 
 
 # ===== FUNCIONES PARA LA IA =====
-def acciones_validas_ia(posiciones, meta_index):
-    """Devuelve lista de índices de acciones válidas para J2 (IA)"""
+def acciones_validas_ia(posiciones, meta_index, jugador):
+    """Devuelve lista de índices de acciones válidas para el jugador especificado"""
     action_to_move = {
         0: "m1", 1: "m2", 2: "m3",
         3: "p1", 4: "p2", 5: "p3", 6: "p4"
@@ -32,20 +32,20 @@ def acciones_validas_ia(posiciones, meta_index):
     for act_idx, mov in action_to_move.items():
         if mov.startswith("m"):
             # Muñecos: verificar que no estén en meta
-            pieza = f"j2_{mov}"
+            pieza = f"{jugador}_{mov}"
             if posiciones[pieza] < meta_index:
                 valid.append(act_idx)
         else:
-            # Pingorote: verificar que haya algún muñeco de J2 en su posición
+            # Pingorote: verificar que haya algún muñeco del jugador en su posición
             pieza = mov
             pos_ping = posiciones.get(pieza)
             if pos_ping is None or pos_ping >= meta_index:
                 continue
             
-            # Verificar si hay algún muñeco de J2 en esa casilla
+            # Verificar si hay algún muñeco del jugador en esa casilla
             puede_mover = False
             for nm, p in posiciones.items():
-                if nm.startswith("j2_m") and p == pos_ping:
+                if nm.startswith(f"{jugador}_m") and p == pos_ping:
                     puede_mover = True
                     break
             
@@ -72,9 +72,9 @@ def obtener_estado_juego(posiciones, tablero):
     ], dtype=np.float32)
 
 
-def seleccionar_accion_ia(estado, modelo, posiciones, meta_index):
+def seleccionar_accion_ia(estado, modelo, posiciones, meta_index, jugador):
     """Selecciona la mejor acción válida usando el modelo entrenado"""
-    acciones_validas = acciones_validas_ia(posiciones, meta_index)
+    acciones_validas = acciones_validas_ia(posiciones, meta_index, jugador)
     
     if not acciones_validas:
         return 0  # Fallback
@@ -116,7 +116,7 @@ def cargar_modelo_ia(ruta="modelo_dqn_estrategia_mental_10.pth"):
         return modelo
     except FileNotFoundError:
         print("ERROR: No se encontró el archivo del modelo")
-        print("   Asegúrate de tener 'modelo_dqn_estrategia_mental.pth' en la carpeta")
+        print(f"   Asegúrate de tener '{ruta}' en la carpeta")
         return None
     except Exception as e:
         print(f"ERROR al cargar modelo: {e}")
@@ -125,47 +125,43 @@ def cargar_modelo_ia(ruta="modelo_dqn_estrategia_mental_10.pth"):
 titulo= pyfiglet.figlet_format("Estrategia Mental")
 print(titulo)
 
-jugador1 = input("Jugador 1, como te llamas?: ")
-modo_juego = input("¿Contra quién quieres jugar?\n1. Jugador 2 humano\n2. IA (modelo entrenado)\nElige (1/2): ")
+# MODO IA vs IA
+print("\n Modo: IA vs IA")
+print("\n Cargando IA 1...")
+modelo_ia_1 = cargar_modelo_ia("modelo_dqn_estrategia_mental_10.pth")
 
-modelo_ia = None
-if modo_juego == "2":
-    print("\n Cargando IA entrenada...")
-    modelo_ia = cargar_modelo_ia("modelo_dqn_estrategia_mental_10.pth")
-    if modelo_ia is None:
-        print(" No se pudo cargar la IA. Jugando contra J2 humano.")
-        jugador2 = "j2"
-    else:
-        jugador2 = "IA"
-else:
-    jugador2 = "j2"
+print("\n Cargando IA 2...")
+modelo_ia_2 = cargar_modelo_ia("modelo_dqn_estrategia_mental_100.pth")
+
+if modelo_ia_1 is None or modelo_ia_2 is None:
+    print("\nError: No se pudieron cargar ambos modelos. Saliendo...")
+    exit()
+
+jugador1 = "IA_1"
+jugador2 = "IA_2"
 
 def limpiar():
     os.system("cls" if os.name=="nt" else "clear")
    
 def escribir(texto, velocidad=0.04):
     for letra in texto:
-        print(letra, end="", flush=True) # el flush=true obliga a python a mostrar las letras directamente y que no guarde en memoria para soltar la frase directamente
-        time.sleep(velocidad) #"pausa" entre letra y letra para el efecto de maquina de escribir
+        print(letra, end="", flush=True)
+        time.sleep(velocidad)
     print()
 
-def intro():  # Dejar las instrucciones mucho más claras e ir eliminando el texto
-
-    # Bienvenida
+def intro():
     escribir(f"\nBienvenidos {jugador1} y {jugador2} a Estrategia Mental!")
     time.sleep(1)
 
     saltar_intro = input("¿Eres nuevo jugador?(Si/No): ")
     if saltar_intro in ("Si", "si"):
 
-        # Información de los creadores y propósito
         limpiar()
         print("\nEste juego ha sido desarrollado por un equipo de tres estudiantes con el objetivo de combinar estrategia y aprendizaje.")
         time.sleep(2.5)
         print("Su creación busca ofrecer una experiencia de pensamiento táctico y análisis durante cada turno, donde cada decisión puede cambiar el curso de la partida.")
         time.sleep(5)
 
-        # Mini historia de lo que va a pasar
         limpiar()
         print("\nEn Estrategia Mental, cada jugador controla tres muñecos que deben avanzar por un tablero lleno de casillas especiales.")
         time.sleep(2.5)
@@ -177,7 +173,6 @@ def intro():  # Dejar las instrucciones mucho más claras e ir eliminando el tex
         escribir("\nPulsa [Enter] para conocer las Reglas del Juego!")
         input()
 
-        # Reglas del juego y condiciones
         limpiar()
         print("Reglas del Juego:")
         time.sleep(1)
@@ -252,7 +247,6 @@ tablero.append("META")
 
 print(tablero)
 
-# Marca si un jugador ya llegó a META
 jugador_llego_meta = {"j1": False, "j2": False}
 
 posiciones = {
@@ -268,74 +262,31 @@ posiciones = {
     "p4": 8,
 }
 
-def eleccion_muñecos1():
+def eleccion_muñecos1_ia(posiciones, meta_index, modelo_ia):
+    """Versión IA de elección de muñecos para J1"""
     if todos_en_meta("j1", posiciones, meta_index):
-        return None  # jugador ya no puede mover
+        return None
     
-    opciones = []
-
-    # Añadir solo muñecos de J1 que no estén en META
-    for m in ["m1", "m2", "m3"]:
-        nombre_muñeco = f"j1_{m}"  # j1_m1, j1_m2, j1_m3
-        if posiciones[nombre_muñeco] < meta_index:
-            opciones.append(m)  # La opción que ve el jugador sigue siendo "m1", "m2", "m3"
-           
-    for p in ["p1", "p2", "p3", "p4"]:
-        if posiciones[p] < meta_index:
-            opciones.append(p)
-   
-    # Pedir al jugador que elija hasta que sea válido
-    while True:
-        mov1 = input(f"\n{jugador1}, elige tu movimiento {opciones}: ")
-        if mov1 not in opciones:
-            print(f"Opción inválida {jugador1}, debe ser una de: {opciones}")
-            continue
-        break
-
-    return mov1
-
-def eleccion_muñecos2():
-    if todos_en_meta("j2", posiciones, meta_index):
-        return None  # jugador ya no puede mover
-    opciones = []
-
-    # Añadir solo muñecos de J2 que no estén en META
-    for m in ["m1", "m2", "m3"]:
-        nombre_muñeco = f"j2_{m}"  # j2_m1, j2_m2, j2_m3
-        if posiciones[nombre_muñeco] < meta_index:
-            opciones.append(m)  # La opción que ve el jugador sigue siendo "m1", "m2", "m3"
-
-    for p in ["p1", "p2", "p3", "p4"]:
-        if posiciones[p] < meta_index:
-            opciones.append(p)
-
-    # Pedir al jugador que elija hasta que sea válido
-    while True:
-        mov2 = input(f"\n{jugador2}, elige tu movimiento {opciones}: ")
-        if mov2 not in opciones:
-            print(f"Opción inválida {jugador2}, debe ser una de: {opciones}")
-            continue
-        break
-
-    return mov2
+    estado = obtener_estado_juego(posiciones, tablero)
+    accion_idx = seleccionar_accion_ia(estado, modelo_ia, posiciones, meta_index, "j1")
+    movimiento = traducir_accion_ia(accion_idx)
+    print(f"\nIA_1 elige: {movimiento} (acción {accion_idx})")
+    
+    return movimiento
 
 def eleccion_muñecos2_ia(posiciones, meta_index, modelo_ia):
     """Versión IA de elección de muñecos para J2"""
     if todos_en_meta("j2", posiciones, meta_index):
         return None
     
-    # Obtener estado actual del juego
     estado = obtener_estado_juego(posiciones, tablero)
-    
-    # La IA elige acción
-    accion_idx = seleccionar_accion_ia(estado, modelo_ia, posiciones, meta_index)
+    accion_idx = seleccionar_accion_ia(estado, modelo_ia, posiciones, meta_index, "j2")
     movimiento = traducir_accion_ia(accion_idx)
-    print(f"\n IA elige: {movimiento} (acción {accion_idx})")
+    print(f"\nIA_2 elige: {movimiento} (acción {accion_idx})")
     
     return movimiento
 
 def poder_mover_pingorote(nombre_pingorote, posiciones):
-    # Permite mover el pingorote si hay un muñeco en la misma casilla
     posicion_pingorote = posiciones[nombre_pingorote]
     for nombre, pos in posiciones.items():
         if (("m" in nombre) and pos == posicion_pingorote):
@@ -359,10 +310,10 @@ def movimientos1(eleccionj1, dadoj1, posiciones):
                 posiciones[f"{eleccionj1}"] += dadoj1
                 break
             else:
-                print(f"\nNo puedes mover {eleccionj1} porque no hay ningún muñeco en su casilla.")
-                eleccionj1= eleccion_muñecos1()
+                print(f"\nNo se puede mover {eleccionj1} porque no hay ningún muñeco en su casilla.")
+                eleccionj1= eleccion_muñecos1_ia(posiciones, meta_index, modelo_ia_1)
         else:
-            eleccionj1= eleccion_muñecos1()
+            eleccionj1= eleccion_muñecos1_ia(posiciones, meta_index, modelo_ia_1)
     return posiciones
 
 def movimientos2(eleccionj2, dadoj2, posiciones):
@@ -382,10 +333,10 @@ def movimientos2(eleccionj2, dadoj2, posiciones):
                 posiciones[f"{eleccionj2}"] += dadoj2
                 break
             else:
-                print(f"\nNo puedes mover {eleccionj2} porque no hay ningún muñeco en su casilla.")
-                eleccionj2= eleccion_muñecos2_ia()
+                print(f"\nNo se puede mover {eleccionj2} porque no hay ningún muñeco en su casilla.")
+                eleccionj2= eleccion_muñecos2_ia(posiciones, meta_index, modelo_ia_2)
         else:
-            eleccionj2= eleccion_muñecos2_ia()
+            eleccionj2= eleccion_muñecos2_ia(posiciones, meta_index, modelo_ia_2)
     return posiciones
 
 def mostrar_tablero(tablero, posiciones):
@@ -396,7 +347,6 @@ def mostrar_tablero(tablero, posiciones):
        
         contenido = f"Casilla {i}: {casilla}"
        
-        # Buscar qué muñecos están en esta casilla
         muñecos_en_casilla = [nombre for nombre, pos in posiciones.items() if pos == i]
        
         if muñecos_en_casilla:
@@ -404,7 +354,6 @@ def mostrar_tablero(tablero, posiciones):
        
         print(contenido)
 
-# Controlar si un muñeco ha llegado a META
 jugador_llego_meta = {nombre: False for nombre in posiciones.keys()}
 
 ultimo_ocupante= {}
@@ -416,12 +365,11 @@ def limpiar_tablero(tablero, posiciones, ultimo_ocupante, casillas_ocupadas_ante
     posiciones_actuales = set(posiciones.values())
 
     nuevas_casillas = []
-    mapa_indices = {}  # Mapeo: índice antiguo → índice nuevo
+    mapa_indices = {}
     nuevo_indice = 0
 
     for i, casilla in enumerate(tablero):
 
-        # CASO: eliminar casilla si estuvo ocupada y ahora está vacía (excepto meta)
         if (
             i in casillas_ocupadas_antes
             and i not in posiciones_actuales
@@ -429,27 +377,22 @@ def limpiar_tablero(tablero, posiciones, ultimo_ocupante, casillas_ocupadas_ante
         ):
             propietario = ultimo_ocupante.get(i, None)
             print(f"[TABLERO] Casilla {i} eliminada. Último ocupante: {propietario}")
-            continue  # No se copia → se elimina
+            continue
 
-        # Si NO se elimina, la añadimos
         nuevas_casillas.append(casilla)
         mapa_indices[i] = nuevo_indice
         nuevo_indice += 1
 
-    # Recalcular posiciones según el mapa nuevo
     for nombre in posiciones:
         posiciones[nombre] = mapa_indices[posiciones[nombre]]
 
-    # Recalcular casillas ocupadas antes
     nuevas_ocupadas = {mapa_indices[i] for i in casillas_ocupadas_antes if i in mapa_indices}
 
-    # Recalcular último ocupante con índices nuevos
     nuevo_ultimo = {}
     for i, ocupante in ultimo_ocupante.items():
         if i in mapa_indices:
             nuevo_ultimo[mapa_indices[i]] = ocupante
 
-    # Nuevo meta index
     meta_index = len(nuevas_casillas) - 1
 
     return nuevas_casillas, nuevas_ocupadas, nuevo_ultimo, meta_index
@@ -466,7 +409,7 @@ def registrar_llegada(nombre):
 
 def verificar_meta(posiciones, meta_index):
     for nombre, pos in posiciones.items():
-        if nombre.startswith("j"): #SOLO MUÑECOS NO PINGOROTES
+        if nombre.startswith("j"):
             if pos >= meta_index:
                 posiciones[nombre] = meta_index  
                 registrar_llegada(nombre)
@@ -478,14 +421,8 @@ def todos_en_meta(jugador, posiciones, meta_index):
     return all(posiciones[f"{jugador}_m{i}"] >= meta_index for i in range(1, 4))
 
 def aplicar_puntuacion(jugador, casilla):
-    """
-    jugador: "j1" o "j2"
-    casilla: valor tomado de tablero[índice] (int o "SUERTE")
-    Usa globales: puntuacion1, puntuacion2, tablero
-    """
     global puntuacion1, puntuacion2, tablero
 
-    # 1) casilla numérica
     if isinstance(casilla, int):
         if jugador == "j1":
             puntuacion1 += casilla
@@ -493,7 +430,6 @@ def aplicar_puntuacion(jugador, casilla):
             puntuacion2 += casilla
         return
 
-    # 2) SUERTE: convertir la casilla negativa más "grande" en positiva
     if casilla == "SUERTE":
         negativos_idx = [i for i, v in enumerate(tablero) if isinstance(v, int) and v < 0]
         if not negativos_idx:
@@ -505,14 +441,12 @@ def aplicar_puntuacion(jugador, casilla):
         print(f"{jugador} cayó en SUERTE: la casilla {idx_max_neg} ({antiguo}) se convierte en {tablero[idx_max_neg]}.")
         return
 
-    # 3) INICIO y META → sin efecto
     return
 
 def mostrar_puntuaciones():
     print(f"Puntuación {jugador1}: {puntuacion1}")
     print(f"Puntuación {jugador2}: {puntuacion2}")
 
-# Determinar orden de turno solo en el primer turno
 turno= 1
 dadoj1 = random.randint(1, 6)
 dadoj2 = random.randint(1, 6)
@@ -540,7 +474,6 @@ if primero == jugador1:
 else:
     print(f"\n{jugador2} empieza primero con un {dadoj2} en el dado.")
 
-# Inventarios para almacenar las casillas reclamadas por cada jugador
 inventario_j1 = []
 inventario_j2 = []
 
@@ -548,15 +481,10 @@ def mostrar_inventarios():
     print(f"\nInventario de {jugador1}: {inventario_j1}")
     print(f"Inventario de {jugador2}: {inventario_j2}")
 
-# Tokens de SUERTE
 tokens_suerte_j1 = 0
 tokens_suerte_j2 = 0
 
 def reclamar_casillas(tablero, posiciones, ultimo_ocupante, casillas_reclamadas, inventario_j1, inventario_j2):
-    """
-    Revisa el tablero y asigna las casillas vacías a los jugadores,
-    agregándolas a su inventario.
-    """
     ocupadas = set(posiciones.values())
     
     for idx, casilla in enumerate(tablero):
@@ -573,7 +501,6 @@ def reclamar_casillas(tablero, posiciones, ultimo_ocupante, casillas_reclamadas,
 def marcar_ultimo_ocupante(pieza_movida, posiciones, ultimo_ocupante):
     pos_nueva = posiciones[pieza_movida]
 
-    # Solo muñecos de jugadores, no pingorotes
     if pieza_movida.startswith("j1_"):
         propietario = "j1"
     elif pieza_movida.startswith("j2_"):
@@ -585,28 +512,20 @@ def marcar_ultimo_ocupante(pieza_movida, posiciones, ultimo_ocupante):
         ultimo_ocupante[pos_nueva] = propietario
 
 def calcular_puntuacion_final(inventario):
-    """
-    Convierte negativos en positivos usando las casillas 'SUERTE' reclamadas,
-    y devuelve la puntuación final.
-    """
     inventario = inventario.copy()
-    # Listar todos los valores negativos
     negativos = [v for v in inventario if isinstance(v, int) and v < 0]
 
-    # Por cada casilla SUERTE que exista en el inventario
     for i, valor in enumerate(inventario):
         if valor == "SUERTE" and negativos:
-            # Tomar el negativo más grande en valor absoluto (más negativo)
-            mayor_negativo = min(negativos)  # más negativo
+            mayor_negativo = min(negativos)
             idx_neg = inventario.index(mayor_negativo)
-            inventario[idx_neg] = abs(mayor_negativo)  # convertir a positivo
+            inventario[idx_neg] = abs(mayor_negativo)
             negativos.remove(mayor_negativo)
 
-    # Sumar solo los números para obtener la puntuación
     puntuacion = sum(v for v in inventario if isinstance(v, int))
     return puntuacion
 
-# Bucle de Partida CORREGIDO - Copia y pega directamente
+# Bucle de Partida
 while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posiciones.items()):
 
     # --- JUEGA EL PRIMERO ---
@@ -622,19 +541,18 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             turno += 1
             continue
 
-        eleccionj1 = eleccion_muñecos1()
+        eleccionj1 = eleccion_muñecos1_ia(posiciones, meta_index, modelo_ia_1)
         if eleccionj1 is None:
             primero, segundo = segundo, primero
             turno += 1
             continue
 
         pieza_movida = f"j1_{eleccionj1}" if eleccionj1.startswith("m") else eleccionj1
-        posicion_origen = posiciones[pieza_movida]  # ← ANTES de mover
+        posicion_origen = posiciones[pieza_movida]
 
         posiciones = movimientos1(eleccionj1, dadoj1, posiciones)
         marcar_ultimo_ocupante(pieza_movida, posiciones, ultimo_ocupante)
 
-        # Verificar si casilla origen quedó vacía
         ocupantes_origen = [p for p, pos in posiciones.items() if pos == posicion_origen]
         casillas_vacias = set()
         if len(ocupantes_origen) == 0 and posicion_origen != meta_index:
@@ -649,7 +567,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
                     inventario_j2.append(valor_casilla)
                     print(f"{jugador2} reclama casilla {posicion_origen} con valor {valor_casilla}.")
 
-        # Limitar posiciones a meta
         for nombre in posiciones:
             if nombre.startswith("j") or nombre.startswith("p"):
                 posiciones[nombre] = min(posiciones[nombre], meta_index)
@@ -673,17 +590,14 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             turno += 1
             continue
 
-        if modelo_ia is not None:
-         eleccionj2 = eleccion_muñecos2_ia(posiciones, meta_index, modelo_ia)
-        else:
-            eleccionj2 = eleccion_muñecos2()
+        eleccionj2 = eleccion_muñecos2_ia(posiciones, meta_index, modelo_ia_2)
         if eleccionj2 is None:
             primero, segundo = segundo, primero
             turno += 1
             continue
 
         pieza_movida = f"j2_{eleccionj2}" if eleccionj2.startswith("m") else eleccionj2
-        posicion_origen = posiciones[pieza_movida]  # ← ANTES de mover
+        posicion_origen = posiciones[pieza_movida]
 
         posiciones = movimientos2(eleccionj2, dadoj2, posiciones)
         marcar_ultimo_ocupante(pieza_movida, posiciones, ultimo_ocupante)
@@ -721,7 +635,7 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             dadoj1 = random.randint(1, 6)
             print(f"\n{jugador1} ha sacado un {dadoj1} en el dado.")
 
-            eleccionj1 = eleccion_muñecos1()
+            eleccionj1 = eleccion_muñecos1_ia(posiciones, meta_index, modelo_ia_1)
             if eleccionj1 is None:
                 continue
 
@@ -761,10 +675,7 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
             dadoj2 = random.randint(1, 6)
             print(f"\n{jugador2} ha sacado un {dadoj2} en el dado.")
 
-            if modelo_ia is not None:
-                eleccionj2 = eleccion_muñecos2_ia(posiciones, meta_index, modelo_ia)
-            else:
-                eleccionj2 = eleccion_muñecos2()
+            eleccionj2 = eleccion_muñecos2_ia(posiciones, meta_index, modelo_ia_2)
             if eleccionj2 is None:
                 continue
 
@@ -804,7 +715,6 @@ while any(nombre.startswith("j") and pos != meta_index for nombre, pos in posici
     mostrar_inventarios()
 
 # --- FIN DEL JUEGO ---
-#Calcular puntuaciones finales usando inventarios y tokens
 puntuacion1 = calcular_puntuacion_final(inventario_j1)
 puntuacion2 = calcular_puntuacion_final(inventario_j2)
 
@@ -820,11 +730,11 @@ print("\n PUNTUACIONES FINALES ")
 print(f"{jugador1}: {puntuacion1} puntos")
 print(f"{jugador2}: {puntuacion2} puntos")
 
-# Determinar ganador
 if puntuacion1 > puntuacion2:
     print(f"{jugador1} ha ganado!")
 elif puntuacion2 > puntuacion1:
     print(f"{jugador2} ha ganado!")
 else:
     print("¡Empate!")
-    print("\n¡El juego ha terminado! Gracias por jugar.") 
+
+print("\n¡El juego ha terminado! Gracias por jugar.")
