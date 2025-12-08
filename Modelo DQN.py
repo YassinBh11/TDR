@@ -1,60 +1,52 @@
 import gymnasium as gym
 from gymnasium import spaces
-import numpy as np #Biblioteca para calculos complejos y aplicacion de formulas
+import numpy as np
 import random
 
-import torch #Red Neuronal
+import torch
 import torch.nn as nn
-import torch.optim as optim #Optimizador errores para predicciones futuras precisas
+import torch.optim as optim
 
 from collections import deque 
 import time
 
 # Hiperparámetros DQN
-batch_size = 64          # Cantidad de experiencias que tomamos de la memoria para entrenar
-gamma = 0.99             # Factor de descuento de recompensas futuras
-epsilon_start = 1.0      # Probabilidad inicial de explorar
-epsilon_end = 0.05       # Probabilidad mínima de explorar
-epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
-memory_capacity = 10000  # Tamaño de la memoria de experiencias
-num_episodes = 100         # Número de partidas/episodios de entrenamiento
+batch_size = 64 
+gamma = 0.99
+epsilon_start = 1.0
+epsilon_end = 0.05
+epsilon_decay = 0.995
+memory_capacity = 10000
+num_episodes = 10 
 
 class Juego(gym.Env):
 
     def __init__(self):
-        # --- Variables generales de partida ---
         self.puntuacion1 = 0
         self.puntuacion2 = 0
         self.ultimo_ocupante = {}
         self.casillas_reclamadas = {}
         self.inventario_j1 = []
         self.inventario_j2 = []
-        # Tokens de suerte
         self.tokens_suerte_j1 = 0
         self.tokens_suerte_j2 = 0
-        # Bandera de finalización
         self.done = False
-        # Estructuras que dependen del tablero
         self.tablero = []
         self.posiciones = {}
         self.casillas_ocupadas_antes = set()
         self.orden_llegada = []
         self.meta_index = 0
-        # --- Espacios Gym ---
         self.action_space = spaces.Discrete(7) 
-        # Observación: 10 valores + tamaño tablero = 11
         self.observation_space = spaces.Box(
             low=0,
             high=35,
             shape=(11,),
             dtype=np.int32
         )
-        # Finalmente reseteamos para construir el tablero
         self.reset()
 
     def reset(self):
         self.tablero = []
-    
         self.inicio= []
         self.tablero.append("INICIO")
 
@@ -78,7 +70,6 @@ class Juego(gym.Env):
         self.tablero.append("META")
         self.meta_index = len(self.tablero) - 1
 
-        # posiciones iniciales
         self.posiciones = {
             "j1_m1": 0, "j1_m2": 0, "j1_m3": 0,
             "j2_m1": 0, "j2_m2": 0, "j2_m3": 0,
@@ -90,27 +81,22 @@ class Juego(gym.Env):
         self.casillas_reclamadas= {}
         self.casillas_ocupadas_antes = set(self.posiciones.values())
         self.orden_llegada = []
-        # Inventarios para almacenar las casillas reclamadas por cada jugador
         self.inventario_j1 = []
         self.inventario_j2 = []
 
-        # Tokens de SUERTE
         self.tokens_suerte_j1 = 0
         self.tokens_suerte_j2 = 0
 
         self.turno= 1
-        # Dados iniciales que determinan quién empieza; usados solo en el primer turno
         self.dado1 = random.randint(1, 6)
         self.dado2 = random.randint(1, 6)
 
-        # bandera para usar los dados iniciales solo en el primer step()
         self.first_turn = True
         self.done = False
 
         return self.get_obs(), {}
 
     def get_obs(self):
-        # observación compacta: posiciones de los 6 muñecos + p1,p2 + tamaño tablero 
         return np.array([
             self.posiciones["j1_m1"],
             self.posiciones["j1_m2"],
@@ -126,44 +112,36 @@ class Juego(gym.Env):
         ], dtype=np.int32)
 
     def limpiar_tablero(self):
-    
         self.meta_index_anterior = len(self.tablero) - 1
         posiciones_actuales = set(self.posiciones.values())
 
         nuevas_casillas = []
-        mapa_indices = {}  # Mapeo: índice antiguo → índice nuevo
+        mapa_indices = {}
         nuevo_indice = 0
 
         for i, casilla in enumerate(self.tablero):
-
-            # CASO: eliminar casilla si estuvo ocupada y ahora está vacía (excepto meta)
             if (
                 i in self.casillas_ocupadas_antes
                 and i not in posiciones_actuales
                 and casilla != "META"
             ):
                 propietario = self.ultimo_ocupante.get(i, None)
-                continue  # No se copia → se elimina
+                continue
 
-            # Si NO se elimina, la añadimos
             nuevas_casillas.append(casilla)
             mapa_indices[i] = nuevo_indice
             nuevo_indice += 1
 
-    # Recalcular posiciones según el mapa nuevo
         for nombre in self.posiciones:
             self.posiciones[nombre] = mapa_indices[self.posiciones[nombre]]
 
-        # Recalcular casillas ocupadas antes
         nuevas_ocupadas = {mapa_indices[i] for i in self.casillas_ocupadas_antes if i in mapa_indices}
 
-        # Recalcular último ocupante con índices nuevos
         nuevo_ultimo = {}
         for i, ocupante in self.ultimo_ocupante.items():
             if i in mapa_indices:
                 nuevo_ultimo[mapa_indices[i]] = ocupante
 
-        # Nuevo meta index
         self.meta_index = len(nuevas_casillas) - 1
 
         return nuevas_casillas, nuevas_ocupadas, nuevo_ultimo, self.meta_index
@@ -182,8 +160,6 @@ class Juego(gym.Env):
         return all(self.posiciones[f"{jugador}_m{i}"] >= self.meta_index for i in range(1, 4))
 
     def aplicar_puntuacion(self, jugador, casilla):
-
-        # 1) casilla numérica
         if isinstance(casilla, int):
             if jugador == "j1":
                 self.puntuacion1 += casilla
@@ -191,7 +167,6 @@ class Juego(gym.Env):
                 self.puntuacion2 += casilla
             return
 
-        # 2) SUERTE: convertir la casilla negativa más "grande" en positiva
         if casilla == "SUERTE":
             negativos_idx = [i for i, v in enumerate(self.tablero) if isinstance(v, int) and v < 0]
             if not negativos_idx:
@@ -203,7 +178,6 @@ class Juego(gym.Env):
             print(f"{jugador} cayó en SUERTE: la casilla {idx_max_neg} ({antiguo}) se convierte en {self.tablero[idx_max_neg]}.")
             return
 
-        # 3) INICIO y META → sin efecto
         return
 
     def reclamar_casillas(self):
@@ -222,7 +196,6 @@ class Juego(gym.Env):
     def marcar_ultimo_ocupante(self, pieza_movida):
         self.posiciones_nueva = self.posiciones[pieza_movida]
 
-        # Solo muñecos de jugadores, no pingorotes
         if pieza_movida.startswith("j1_"):
             propietario = "j1"
         elif pieza_movida.startswith("j2_"):
@@ -235,59 +208,58 @@ class Juego(gym.Env):
 
     def calcular_puntuacion_final(self, inventario):
         inventario = inventario.copy()
-        # Listar todos los valores negativos
         negativos = [v for v in inventario if isinstance(v, int) and v < 0]
 
-        # Por cada casilla SUERTE que exista en el inventario
         for i, valor in enumerate(inventario):
             if valor == "SUERTE" and negativos:
-                # Tomar el negativo más grande en valor absoluto (más negativo)
-                mayor_negativo = min(negativos)  # más negativo
+                mayor_negativo = min(negativos)
                 idx_neg = inventario.index(mayor_negativo)
-                inventario[idx_neg] = abs(mayor_negativo)  # convertir a positivo
+                inventario[idx_neg] = abs(mayor_negativo)
                 negativos.remove(mayor_negativo)
 
-        # Sumar solo los números para obtener la puntuación
         puntuacion = sum(v for v in inventario if isinstance(v, int))
         return puntuacion
 
-    def acciones_validas(self,jugador):
-            action_to_move = {
-                0: "m1", 1: "m2", 2: "m3",
-                3: "p1", 4: "p2", 5: "p3", 6: "p4"
-            }
+    def acciones_validas(self, jugador):
+        """Devuelve lista de índices de acciones válidas para el jugador"""
+        action_to_move = {
+            0: "m1", 1: "m2", 2: "m3",
+            3: "p1", 4: "p2", 5: "p3", 6: "p4"
+        }
 
-            valid = []
-            for act_idx, mov in action_to_move.items():
-                if mov.startswith("m"):
-                    pieza = f"{jugador}_{mov}"
-                else:
-                    pieza = mov
-                if pieza in ("p1","p2","p3","p4"):
-                    if self.posiciones[pieza] is None:
-                        continue
-                    pos_ping = self.posiciones[pieza]
-                    puede_mover = any(
-                        ("_m" in nm) and (p == pos_ping)
-                        for nm, p in self.posiciones.items()
-                    )
-                    if puede_mover:
-                        valid.append(act_idx)
-                    continue
+        valid = []
+        for act_idx, mov in action_to_move.items():
+            if mov.startswith("m"):
+                # Siempre se pueden mover muñecos
                 valid.append(act_idx)
-            return valid
+            else:
+                # Pingorote: verificar si hay algún muñeco en su posición
+                pieza = mov
+                pos_ping = self.posiciones.get(pieza)
+                if pos_ping is None:
+                    continue
+                
+                # Verificar si hay algún muñeco del jugador en esa casilla
+                puede_mover = False
+                for nm, p in self.posiciones.items():
+                    if nm.startswith(f"{jugador}_m") and p == pos_ping:
+                        puede_mover = True
+                        break
+                
+                if puede_mover:
+                    valid.append(act_idx)
+        
+        return valid
         
     def step(self, action):
         if self.done:
             return self.get_obs(), 0.0, True, False, {}
 
-        # ---- mapping acción -> nombre movimiento (para J1 / J2) ----
         action_to_move = {
                 0: "m1", 1: "m2", 2: "m3",
                 3: "p1", 4: "p2", 5: "p3", 6: "p4"
             }
         
-        # helper local: comprueba si un pingorote puede moverse (hay algún muñeco en su casilla)
         def _poder_mover_pingorote(ping_name):
             pos_ping = self.posiciones[ping_name]
             for nm, p in self.posiciones.items():
@@ -300,7 +272,7 @@ class Juego(gym.Env):
             mov = action_to_move.get(act_idx, None)
             if mov is None:
                 # acción inválida → no mover
-                return None, None, -5
+                return None, None, -100
 
             # traducir a nombre de pieza según jugador
             if mov.startswith("m"):
@@ -312,13 +284,13 @@ class Juego(gym.Env):
             if pieza in ("p1","p2","p3","p4"):
                 if not _poder_mover_pingorote(pieza):
                     # pingorote no se puede mover -> no mover
-                    return None, None, -5
+                    return None, None, -100
                 
             # origen antes de mover
             origen = self.posiciones.get(pieza, None)
             if origen is None:
                 # pieza inexistente (defensa) -> no mover
-                return None, None, -5
+                return None, None, -100
 
             # aplicar movimiento
             self.posiciones[pieza] += dado
@@ -331,18 +303,15 @@ class Juego(gym.Env):
             # guardamos pieza movida para posible uso por otras funciones
             return pieza, origen, 0.0  # no reward por mover
 
-        # ---- Determinar primer/segundo SOLO EN PRIMER TURNO ----
+        # Determinar orden primera vez
         if getattr(self, "first_turn", True):
-            # usar dados guardados si existen
             d1 = getattr(self, "dado1", random.randint(1, 6))
             d2 = getattr(self, "dado2", random.randint(1, 6))
 
-            # repetir si empate
             while d1 == d2:
                 d1 = random.randint(1, 6)
                 d2 = random.randint(1, 6)
 
-            # almacenar quien es primero/segundo (se mantiene durante la partida)
             if d1 > d2:
                 self.primero = "j1"
                 self.segundo = "j2"
@@ -350,15 +319,10 @@ class Juego(gym.Env):
                 self.primero = "j2"
                 self.segundo = "j1"
 
-            # guardar dados iniciales para usar en primer turno
             self._first_d1 = d1
             self._first_d2 = d2
+            self.first_turn = True
 
-            # mark first_turn done (pero usaremos self.first_turn a la hora de asignar dados por jugador)
-            self.first_turn = True  # la bandera la consumiremos al asignar dados en la ejecución abajo
-
-        # ---- Ejecutar las dos acciones en orden (primero → segundo) ----
-        # recogemos info para info dict
         info = {"moves": []}
 
         # para cada jugador en el orden [primero, segundo]
@@ -378,30 +342,28 @@ class Juego(gym.Env):
                 # la acción del agente viene del argumento `action`
                 act_idx = int(action)
             else:
-                # rival: acción aleatoria 0..6, pero si intenta mover pingorote inválido, _ejecutar_accion_jugador lo ignorará
-                act_idx = random.randint(0, 6)
+                # rival: acción válida aleatoria
+                acciones_validas_rival = self.acciones_validas("j2")
+                if acciones_validas_rival:
+                    act_idx = random.choice(acciones_validas_rival)
+                else:
+                    act_idx = 0  # Mover primer muñeco por defecto
 
             # ejecutar acción
             pieza_movida, posicion_origen, reward = _ejecutar_accion_jugador(turno_jugador, act_idx, dado)
 
-            # si se movió, marcar último ocupante y gestionar reclamación de casilla origen
             if pieza_movida is not None:
-                # marcar último ocupante: si tienes método de clase usarlo, si no actualizar dict aquí
                 try:
-                    # si existe el método de la clase lo usamos para mantener consistencia
                     self.marcar_ultimo_ocupante(pieza_movida)
                 except Exception:
-                    # fallback: marcar directamente
                     pos_nueva = self.posiciones[pieza_movida]
                     propietario = "j1" if pieza_movida.startswith("j1_") else ("j2" if pieza_movida.startswith("j2_") else None)
                     if propietario is not None:
                         self.ultimo_ocupante[pos_nueva] = propietario
 
-                # comprobar si la casilla de origen quedó vacía (y no era META)
                 if posicion_origen is not None:
                     ocupantes_en_origen = [n for n, p in self.posiciones.items() if p == posicion_origen]
                     if len(ocupantes_en_origen) == 0 and posicion_origen != self.meta_index:
-                        # reclamar casilla (si no reclamada ya)
                         if posicion_origen not in self.casillas_reclamadas:
                             valor = self.tablero[posicion_origen]
                             if valor not in ("INICIO", "META"):
@@ -409,59 +371,44 @@ class Juego(gym.Env):
                                 owner_inv.append(valor)
                                 self.casillas_reclamadas[posicion_origen] = "j1" if pieza_movida.startswith("j1_") else "j2"
 
-            # registrar movimiento en info (para debug/entrenamiento)
             info["moves"].append({"player": turno_jugador, "action": act_idx, "piece": pieza_movida, "die": dado})
 
-        # ya consumimos el first_turn inicial
         if getattr(self, "first_turn", False):
             self.first_turn = False
 
-        # ---- Después de las dos acciones: limpieza y comprobaciones ----
-        # actualizar límites a meta para todas las piezas por precaución
         for nombre in list(self.posiciones.keys()):
             if nombre.startswith("j") or nombre.startswith("p"):
                 self.posiciones[nombre] = min(self.posiciones[nombre], self.meta_index)
 
-        # llamar a limpiar_tablero (se espera que devuelva (nuevas, nuevas_ocupadas, nuevo_ultimo, meta_index))
         try:
             nuevas, nuevas_ocupadas, nuevo_ultimo, nuevo_meta = self.limpiar_tablero()
-            # reasignar el estado con los valores devueltos por tu método
             self.tablero = nuevas
             self.casillas_ocupadas_antes = nuevas_ocupadas
             self.ultimo_ocupante = nuevo_ultimo
             self.meta_index = nuevo_meta
         except Exception:
-            # si tu limpiar_tablero ya actualiza self internamente, no hace falta reasignar
             pass
 
-        # reclamar casillas usando tu método si existe (intenta usar versión de la clase)
         try:
             self.reclamar_casillas()
         except Exception:
-            # fallback: ya gestionamos reclamación arriba
             pass
 
-        # verificar llegadas a meta
         try:
             self.verificar_meta()
         except Exception:
-            # fallback: comprobación manual
             for nombre, pos in self.posiciones.items():
                 if nombre.startswith("j") and pos >= self.meta_index:
-                    # registrar llegada si existe la lista
                     if nombre not in getattr(self, "orden_llegada", []):
                         try:
                             self.registrar_llegada(nombre)
                         except Exception:
                             self.orden_llegada.append(nombre)
 
-        #---- Comprobar condiciones de final de partida ----
         j1_win = self.todos_en_meta("j1")
         j2_win = self.todos_en_meta("j2")
 
         if j1_win or j2_win:
-
-            # calcular puntuaciones finales reales
             puntuacion_j1 = self.calcular_puntuacion_final(self.inventario_j1)
             puntuacion_j2 = self.calcular_puntuacion_final(self.inventario_j2)
             
@@ -486,41 +433,20 @@ class Juego(gym.Env):
         obs = self.get_obs()
         return obs, 0.0, False, False, info 
 
-#Comprobar que el entorno se ejecuta de manera correcta
-#if __name__ == "__main__":  
-#    env = Juego()  # Crear el entorno
-#    estado = env.reset()
-#    print("Estado inicial:", estado)
-#    done = False
-#    paso = 0
-#    while not done:
-        paso += 1
-        accion = env.action_space.sample()  # Acción aleatoria (0, 1 o 2)
-        estado, recompensa, terminated, truncated, info = env.step(accion)
-        done = terminated or truncated
-
-
-        print(f"\n--- Paso {paso} ---")
-        print("Acción tomada:", accion)
-        print("Nuevo estado:", estado)
-        print("Recompensa:", recompensa)
-        print("¿Terminado?:", done)
-        print("Info extra:", info)
-
 
 class Red_neuronal(nn.Module):
     def __init__(self, input_size=11, hidden_size=64, output_size=7):
         super(Red_neuronal, self).__init__()
-        # Capas totalmente conectadas
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, output_size)
         self.relu = nn.ReLU()
 
-    def forward(self, x): #el camino que siguen los datos desde la entrada hasta la salida
-        x = self.relu(self.fc1(x)) #x es el estado del juego
+    def forward(self, x):
+        x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
-        return self.fc3(x)  # devuelve Q-values para cada acción
+        return self.fc3(x)
+
 
 class ReplayMemory:
     def __init__(self, capacity):
@@ -535,14 +461,19 @@ class ReplayMemory:
     def __len__(self):
         return len(self.memory) 
     
+
 #Entrenamiento IA
 def seleccionar_accion(state, model, epsilon, env):
     state_tensor = torch.FloatTensor(state).unsqueeze(0) 
     
     acciones_validas = env.acciones_validas("j1")
     
+    # Si no hay acciones válidas, mover primer muñeco por defecto
+    if not acciones_validas:
+        return 0
+    
     if random.random() < epsilon:
-        return random.randint(0, 6)  # Acción aleatoria
+        return random.choice(acciones_validas)  # Exploración: acción válida aleatoria
     else:
         # with torch.no_grad() indica que no vamos a calcular gradientes
         # Solo queremos obtener el valor Q, no entrenar todavía
@@ -550,13 +481,13 @@ def seleccionar_accion(state, model, epsilon, env):
         with torch.no_grad():  
             # Pasamos el estado por la red y obtenemos los Q-values
             q_values = model(state_tensor).squeeze(0) #Q-values para cada acción
-            
-        # Filtrar Q-values para acciones válidas  
-        q_masked = q_values.clone()
-        q_masked[torch.tensor([i for i in range(7) if i not in acciones_validas], dtype=torch.long)] = -1e9  # Asignar un valor muy bajo a acciones inválidas
+        
+        # Obtener Q-values solo de acciones válidas y elegir la mejor
+        q_validas = [(i, q_values[i].item()) for i in acciones_validas]
+        mejor_accion = max(q_validas, key=lambda x: x[1])[0]
          
         # torch.argmax(q_values) devuelve el índice de la acción con mayor Q-value
-        return torch.argmax(q_masked).item()  # .item() convierte el tensor en un número entero normal
+        return mejor_accion  # .item() convierte el tensor en un número entero normal
 
 
 model = Red_neuronal()
@@ -564,6 +495,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 memory = ReplayMemory(memory_capacity)
 criterion = nn.MSELoss()
 epsilon = epsilon_start
+
 
 def entrenar():
     global epsilon  # Para actualizar epsilon
@@ -632,7 +564,8 @@ def entrenar():
         if episodio % 100 == 0:
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
 
-def evaluar(modelo, num_partidas=100):
+
+def evaluar(modelo, num_partidas=10):
     env = Juego()
     victorias = 0
     empates = 0
