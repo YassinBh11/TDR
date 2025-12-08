@@ -300,7 +300,7 @@ class Juego(gym.Env):
             mov = action_to_move.get(act_idx, None)
             if mov is None:
                 # acción inválida → no mover
-                return None, None, 0.0
+                return None, None, -1
 
             # traducir a nombre de pieza según jugador
             if mov.startswith("m"):
@@ -312,13 +312,13 @@ class Juego(gym.Env):
             if pieza in ("p1","p2","p3","p4"):
                 if not _poder_mover_pingorote(pieza):
                     # pingorote no se puede mover -> no mover
-                    return None, None, 0.0
+                    return None, None, -1
                 
             # origen antes de mover
             origen = self.posiciones.get(pieza, None)
             if origen is None:
                 # pieza inexistente (defensa) -> no mover
-                return None, None, 0.0
+                return None, None, -1
 
             # aplicar movimiento
             self.posiciones[pieza] += dado
