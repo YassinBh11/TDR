@@ -1,23 +1,23 @@
 import gymnasium as gym
 from gymnasium import spaces
-import numpy as np
+import numpy as np #Biblioteca para calculos complejos y aplicacion de formulas
 import random
 
-import torch
+import torch #Red Neuronal
 import torch.nn as nn
-import torch.optim as optim
+import torch.optim as optim #Optimizador errores para predicciones futuras precisas
 
 from collections import deque 
 import time
 
 # Hiperparámetros DQN
-batch_size = 64 
-gamma = 0.99
-epsilon_start = 1.0
-epsilon_end = 0.05
-epsilon_decay = 0.995
-memory_capacity = 10000
-num_episodes = 10 
+batch_size = 64          # Cantidad de experiencias que tomamos de la memoria para entrenar
+gamma = 0.99             # Factor de descuento de recompensas futuras
+epsilon_start = 1.0      # Probabilidad inicial de explorar
+epsilon_end = 0.05       # Probabilidad mínima de explorar
+epsilon_decay = 0.995    # Factor de decaimiento por episodioº  
+memory_capacity = 10000  # Tamaño de la memoria de experiencias
+num_episodes = 100         # Número de partidas/episodios de entrenamiento
 
 class Juego(gym.Env):
 
@@ -565,7 +565,7 @@ def entrenar():
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward}")
 
 
-def evaluar(modelo, num_partidas=10):
+def evaluar(modelo, num_partidas=1):
     env = Juego()
     victorias = 0
     empates = 0
@@ -598,3 +598,10 @@ inicio = time.time()
 entrenar()
 evaluar(model)
 print(f"Tiempo total entrenamiento: {time.time() - inicio:.2f} segundos")
+
+torch.save({
+    'model_state_dict': model.state_dict(),
+    'input_size': 11,
+    'hidden_size': 64,
+    'output_size': 7
+}, "modelo_dqn_estrategia_mental.pth")
