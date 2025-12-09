@@ -11,19 +11,23 @@ from collections import deque
 import time
 
 # Hiperparámetros DQN
-batch_size = 128
+batch_size = 64
 gamma = 0.999
 epsilon_start = 1.0
 epsilon_end = 0.05
 epsilon_decay = 0.9995
 memory_capacity = 100000
-num_episodes = 10000
+num_episodes = 1000
 
 class Juego(gym.Env):
 
     def __init__(self):
         self.puntuacion1 = 0
         self.puntuacion2 = 0
+        self.victorias_j1 = 0
+        self.victorias_j2 = 0
+        self.empates = 0
+        self.last_result= None
         self.ultimo_ocupante = {}
         self.casillas_reclamadas = {}
         self.inventario_j1 = []
@@ -210,12 +214,16 @@ class Juego(gym.Env):
         inventario = inventario.copy()
         negativos = [v for v in inventario if isinstance(v, int) and v < 0]
 
-        for i, valor in enumerate(inventario):
-            if valor == "SUERTE" and negativos:
-                mayor_negativo = min(negativos)
-                idx_neg = inventario.index(mayor_negativo)
-                inventario[idx_neg] = abs(mayor_negativo)
-                negativos.remove(mayor_negativo)
+        num_suerte_en_inventario = sum(1 for v in inventario if v == "SUERTE")
+        
+        if num_suerte_en_inventario > 0 and negativos:
+            # Ordenar negativos por más negativo (ej: -7, -5, -3, -1)
+            negativos_ordenados = sorted([v for v in inventario if isinstance(v, int) and v < 0])
+            # Convertir hasta num_suerte_en_inventario de los más negativos
+            for _ in range(min(num_suerte_en_inventario, len(negativos_ordenados))):
+                peor = negativos_ordenados.pop(0)  # sacamos el más negativo
+                idx_neg = inventario.index(peor)
+                inventario[idx_neg] = abs(peor)
 
         puntuacion = sum(v for v in inventario if isinstance(v, int))
         return puntuacion
@@ -254,73 +262,63 @@ class Juego(gym.Env):
         return [v for v in inventario if isinstance(v, int) and v < 0]
 
     def calcular_reward_casilla(self, jugador, casilla_reclamada):
-        """
-        ESTRATEGIA AJUSTADA:
-        - Penalización baja por pingorotes movidos.
-        - SUERTE es más valiosa cuanto mayor sea el negativo en el inventario.
-        - Se penaliza la negativa MUCHO si no hay SUERTE, pero el incentivo aumenta.
-        """
+        
         if casilla_reclamada == "INICIO" or casilla_reclamada == "META":
             return 0.0
-        
+
         tiene_suerte = (self.tokens_suerte_j1 > 0) if jugador == "j1" else (self.tokens_suerte_j2 > 0)
         negativos = self.obtener_negativos_en_inventario(jugador)
-        
+
         # ------------------------------------------------------------
-        # CASO 1: Casilla SUERTE - PRIORIDAD CONDICIONAL
+        # 1. CASILLA SUERTE — MUY PRIORITARIA
         # ------------------------------------------------------------
         if casilla_reclamada == "SUERTE":
-            reward_base = 2000.0  # Un valor base respetable
-            
+            reward_base = 2500.0
+
             if negativos:
-                mayor_negativo = min(negativos) # El más negativo (ej: -5 es menor que -1)
-                valor_absoluto_negativo = abs(mayor_negativo)
-                
-                # Bonus MASIVO: Valor solo si el negativo es grande (>= -4)
-                if valor_absoluto_negativo >= 4:
-                    # Multiplicador basado en la magnitud del negativo (-4 o -5)
-                    # El combo es MUY valioso: e.g., si es -5, bonus = 5 * 8 = 40.0
-                    bonus_combo = valor_absoluto_negativo * 120.0 
-                    return reward_base + bonus_combo
+                mayor_neg = min(negativos)
+                valor_abs = abs(mayor_neg)
+
+                if valor_abs >= 4:
+                    return reward_base + valor_abs * 150.0  # combo fuerte
                 else:
-                    # El negativo no es lo suficientemente grande (ej: -1, -2, -3)
-                    # Recompensa media para motivar la acumulación de SUERTE.
-                    return reward_base - 4000.0
-            else:
-                # Aún sin negativos, SUERTE es valiosa (protección futura)
-                return reward_base
-        
+                    return reward_base - 500.0  # algo menos valiosa si negativos pequeños
+            
+            return reward_base
+
+
         # ------------------------------------------------------------
-        # CASO 2: Casilla numérica
+        # 2. CASILLA NUMÉRICA
         # ------------------------------------------------------------
         if isinstance(casilla_reclamada, int):
+
+            # -------------------------
+            # POSITIVAS
+            # -------------------------
             if casilla_reclamada > 0:
-                # Positiva: reward directo (sin cambios)
-                return float(casilla_reclamada) * 1000
+                return float(casilla_reclamada) * 1200.0
+
+
+            # -------------------------
+            # NEGATIVAS
+            # -------------------------
+            valor_abs = abs(casilla_reclamada)
+
+            if tiene_suerte:
+                # Convertir un negativo sigue siendo malo,
+                # pero menos porque lo transformará luego.
+                return -valor_abs * 100.0   # pequeña penalización
+
             else:
-                # Negativa - aquí está la clave
-                if tiene_suerte:
-                    # CON SUERTE: Valor de inversión (se convertirá en positiva)
-                    return abs(casilla_reclamada) * (50.0)  # Recompensa alta por la conversión
-                else:
-                    # SIN SUERTE: Penalización para desincentivar, pero el "incentivo de aguante" es la clave
-                    
-                    valor_absoluto = abs(casilla_reclamada)
-                    penalizacion_brutal = float(casilla_reclamada) * 100.0 # Penalización base (ej: -5 * 3 = -15)
-                    
-                    # INCENTIVO POR AGUANTE: Solo si es muy negativo (>= -4),
-                    # se le da un pequeño "premio" positivo por el potencial futuro.
-                    if valor_absoluto >= 4:
-                        # Recompensa para aguantar un gran negativo y buscar SUERTE
-                        incentivo_aguante = valor_absoluto # Ej: -5 obtiene +7.5 de incentivo
-                    else:
-                        incentivo_aguante = 0.0
-                    
-                    # La penalización se reduce si el negativo es grande
-                    # Ej: -5 sin suerte: -15 + 7.5 = -7.5 (Menos malo que antes)
-                    # Ej: -1 sin suerte: -3 + 0.0 = -3.0 (Malísimo)
-                    return penalizacion_brutal + incentivo_aguante
-        
+                # Sin SUERTE: NEGATIVOS PROHIBIDOS
+                if valor_abs <= 3:
+                    return -5000.0  # castigo brutal
+
+                if valor_abs >= 4:
+                    # grande pero sin SUERTE → sigue siendo malísimo
+                    return -10000.0 
+                return -15000.0  # castigo máximo
+
         return 0.0
         
     def step(self, action):
@@ -342,7 +340,7 @@ class Juego(gym.Env):
         def _ejecutar_accion_jugador(jugador, act_idx, dado):
             mov = action_to_move.get(act_idx, None)
             if mov is None:
-                return None, None, -1
+                return None, None, -1.0 # Retornamos un float negativo por defecto
 
             if mov.startswith("m"):
                 pieza = f"{jugador}_{mov}"
@@ -351,12 +349,13 @@ class Juego(gym.Env):
 
             if pieza in ("p1","p2","p3","p4"):
                 if not _poder_mover_pingorote(pieza):
-                    return None, None, -1
+                    return None, None, -1.0
                 
             origen = self.posiciones.get(pieza, None)
             if origen is None:
-                return None, None, -1
+                return None, None, -1.0
 
+            # Movimiento real
             self.posiciones[pieza] += dado
 
             if self.posiciones[pieza] >= self.meta_index:
@@ -409,11 +408,23 @@ class Juego(gym.Env):
             # Guardar estado ANTES de la acción
             inventario_anterior = self.inventario_j1.copy() if turno_jugador == "j1" else self.inventario_j2.copy()
             tokens_suerte_anterior = self.tokens_suerte_j1 if turno_jugador == "j1" else self.tokens_suerte_j2
-            negativos_anterior = self.obtener_negativos_en_inventario(turno_jugador)
-
-            pieza_movida, posicion_origen, reward = _ejecutar_accion_jugador(turno_jugador, act_idx, dado)
+            
+            # --- ARREGLO DE ERROR Y LÓGICA DE RECOMPENSAS ---
+            # 1. Asignamos el retorno a reward_movimiento directamente
+            pieza_movida, posicion_origen, reward_movimiento = _ejecutar_accion_jugador(turno_jugador, act_idx, dado)
 
             if pieza_movida is not None:
+                # 2. Reward Shaping: Recompensa por avanzar (base)
+                reward_movimiento += float(dado) * 50.0
+                
+                # 3. ANTI-TUNNEL VISION: Recompensa extra por sacar ficha de INICIO
+                if posicion_origen == 0:
+                    reward_movimiento += 300.0
+                
+                # Penalización pequeña si intenta mover algo que ya está en meta
+                if posicion_origen == self.meta_index:
+                    reward_movimiento -= 50.0
+
                 try:
                     self.marcar_ultimo_ocupante(pieza_movida)
                 except Exception:
@@ -439,8 +450,12 @@ class Juego(gym.Env):
                                         self.tokens_suerte_j2 += 1
                                 
                                 self.casillas_reclamadas[posicion_origen] = turno_jugador
+            else:
+                # Si el movimiento fue inválido (pieza_movida is None)
+                if turno_jugador == "j1":
+                    reward_movimiento = -100.0  # Castigo
 
-            # Detectar qué casilla se reclamó
+            # Detectar qué casilla se reclamó para sumar su puntuación
             if turno_jugador == "j1":
                 inventario_actual = self.inventario_j1
             else:
@@ -450,32 +465,29 @@ class Juego(gym.Env):
             if len(inventario_actual) > len(inventario_anterior):
                 casilla_reclamada = inventario_actual[-1]
             
-            # Calcular reward ANTES de actualizar tokens
+            reward_casilla = 0.0
             if casilla_reclamada is not None:
-                # Temporalmente restaurar estado anterior para cálculo correcto
+                # Lógica temporal para calcular reward correcto
                 if turno_jugador == "j1":
                     self.tokens_suerte_j1 = tokens_suerte_anterior
                 else:
                     self.tokens_suerte_j2 = tokens_suerte_anterior
                 
-                # Eliminar la última casilla temporalmente para calcular reward
                 inventario_actual.pop()
-                
                 reward_casilla = self.calcular_reward_casilla(turno_jugador, casilla_reclamada)
-                
-                # Restaurar inventario
                 inventario_actual.append(casilla_reclamada)
                 
-                # Restaurar tokens actuales
                 if turno_jugador == "j1":
                     if casilla_reclamada == "SUERTE":
                         self.tokens_suerte_j1 = tokens_suerte_anterior + 1
                 else:
                     if casilla_reclamada == "SUERTE":
                         self.tokens_suerte_j2 = tokens_suerte_anterior + 1
-                
-                if turno_jugador == "j1":
-                    reward_acumulado_j1 += reward_casilla
+            
+            # --- SUMA FINAL DE RECOMPENSAS J1 ---
+            if turno_jugador == "j1":
+                # Sumamos el reward por moverse + el reward por lo que haya cogido
+                reward_acumulado_j1 += (reward_movimiento + reward_casilla)
 
             info["moves"].append({
                 "player": turno_jugador, 
@@ -483,16 +495,18 @@ class Juego(gym.Env):
                 "piece": pieza_movida, 
                 "die": dado,
                 "casilla_reclamada": casilla_reclamada,
-                "reward_turno": reward_casilla if casilla_reclamada and turno_jugador == "j1" else 0
+                "reward_turno": (reward_movimiento + reward_casilla) if turno_jugador == "j1" else 0
             })
 
         if getattr(self, "first_turn", False):
             self.first_turn = False
 
+        # Limitar posiciones a meta
         for nombre in list(self.posiciones.keys()):
             if nombre.startswith("j") or nombre.startswith("p"):
                 self.posiciones[nombre] = min(self.posiciones[nombre], self.meta_index)
 
+        # Limpieza y lógica de juego estándar
         try:
             nuevas, nuevas_ocupadas, nuevo_ultimo, nuevo_meta = self.limpiar_tablero()
             self.tablero = nuevas
@@ -510,6 +524,7 @@ class Juego(gym.Env):
         try:
             self.verificar_meta()
         except Exception:
+            # Fallback de verificación de meta
             for nombre, pos in self.posiciones.items():
                 if nombre.startswith("j") and pos >= self.meta_index:
                     if nombre not in getattr(self, "orden_llegada", []):
@@ -536,19 +551,26 @@ class Juego(gym.Env):
                     puntuacion_j2 += puntos
             
             diferencia = puntuacion_j1 - puntuacion_j2
-            
-            if diferencia >= 0:
-                reward_final += puntuacion_j1 * 100
+            print(f"Puntuaciones finales - J1: {puntuacion_j1}, J2: {puntuacion_j2}, Dif: {diferencia}")
+
+            if diferencia > 0:
+                self.last_result = "j1"
+                self.victorias_j1 += 1
+                reward_final += 10000.0 + (diferencia * 100) # Gran bonus por ganar
+            elif diferencia < 0:
+                self.last_result = "j2"
+                self.victorias_j2 += 1
+                reward_final -= 5000.0 # Castigo por perder
             else:
-                reward_final += -1 * (diferencia * 100)
-
+                self.last_result = "empate"
+                self.empates += 1
+                
+            print(f"Resultado final de la partida: {self.last_result.upper()}")
+            
             self.done = True
-            obs = self.get_obs()
-            return obs, float(reward_final), self.done, False, info        
-        
-        obs = self.get_obs()
-        return obs, float(reward_final), False, False, info 
+            return self.get_obs(), float(reward_final), self.done, False, info
 
+        return self.get_obs(), float(reward_final), False, False, info
 
 class Red_neuronal(nn.Module):
     def __init__(self, input_size=11, hidden_size=128, output_size=7):
@@ -604,10 +626,13 @@ memory = ReplayMemory(memory_capacity)
 criterion = nn.MSELoss()
 epsilon = epsilon_start
 
-
 def entrenar():
     global epsilon
     model.train()
+    
+    total_victorias_j1 = 0
+    total_victorias_j2 = 0
+    total_empates = 0
     
     for episodio in range(num_episodes):
         env = Juego()
@@ -641,6 +666,11 @@ def entrenar():
                         sue_count = env.tokens_suerte_j1
                         print(f"Ep{episodio+1} R{ronda}: J1 reclamó {cas} → Reward={rew:.1f} | Inv: {neg_count} neg, {sue_count} suerte")
         
+        total_victorias_j1 += env.victorias_j1
+        total_victorias_j2 += env.victorias_j2
+        total_empates += env.empates
+        print(f"Fin Episodio {episodio+1}: Ganador -> {env.last_result.upper()}")
+        
         epsilon = max(epsilon_end, epsilon * epsilon_decay)
         
         if len(memory) >= batch_size:
@@ -664,97 +694,21 @@ def entrenar():
             loss.backward()
             optimizer.step()
             
-            if episodio % 10 == 0:
+            if episodio % 1 == 0:
                 print(f"Episodio {episodio+1}: Loss={loss.item():.4f}, Epsilon={epsilon:.3f}")
         
-        if episodio % 100 == 0:
+        if episodio % 1 == 0:
             print(f"Episodio {episodio+1}/{num_episodes} completado, Total Reward: {total_reward:.2f}")
-
-
-def evaluar(modelo, num_partidas=10000):
-    """
-    Evalúa el modelo DQN contra el jugador aleatorio (J2).
-    Determina ganador basándose en la puntuación final del juego.
-    """
-    env = Juego()
-    victorias_j1 = 0
-    victorias_j2 = 0
-    empates = 0
-    
-    for i in range(num_partidas):
-        estado = env.reset()
-        done = False
-        
-        while not done:
-            estado_array = estado[0] if isinstance(estado, tuple) else estado
-            
-            # Usar el modelo sin exploración (epsilon=0)
-            accion = seleccionar_accion(estado_array, modelo, epsilon=0.0, env=env)
-            
-            estado, reward, terminated, truncated, info = env.step(accion)
-            done = terminated or truncated
-        
-        # Al finalizar el juego, calcular quién ganó basándose en puntuación
-        puntuacion_j1 = env.calcular_puntuacion_final(env.inventario_j1)
-        puntuacion_j2 = env.calcular_puntuacion_final(env.inventario_j2)
-        
-        # Añadir puntos por orden de llegada
-        recompensas = [5, 4, 3, 2, 1, 0]
-        for idx, muñeco in enumerate(env.orden_llegada):
-            puntos = recompensas[min(idx, len(recompensas) - 1)]
-            if muñeco.startswith("j1_"):
-                puntuacion_j1 += puntos
-            elif muñeco.startswith("j2_"):
-                puntuacion_j2 += puntos
-        
-        # Determinar ganador basándose en la diferencia
-        diferencia = puntuacion_j1 - puntuacion_j2
-        
-        if diferencia > 0:
-            victorias_j1 += 1
-        elif diferencia < 0:
-            victorias_j2 += 1
-        else:
-            empates += 1
-        
-        # Mostrar progreso cada 100 partidas
-        if (i + 1) % 1 == 0:
-            print(f"Progreso: {i+1}/{num_partidas} partidas evaluadas...")
-    
-    # Resultados finales
-    print("\n" + "="*60)
-    print(f"RESULTADOS DE EVALUACIÓN ({num_partidas} partidas)")
-    print("="*60)
-    print(f"J1 (DQN):       {victorias_j1} victorias ({victorias_j1/num_partidas*100:.1f}%)")
-    print(f"J2 (Aleatorio): {victorias_j2} victorias ({victorias_j2/num_partidas*100:.1f}%)")
-    print(f"Empates:        {empates} ({empates/num_partidas*100:.1f}%)")
-    print("="*60)
-    
-    return {
-        'victorias_j1': victorias_j1,
-        'victorias_j2': victorias_j2,
-        'empates': empates,
-        'win_rate_j1': victorias_j1 / num_partidas * 100,
-        'win_rate_j2': victorias_j2 / num_partidas * 100
-    }
-
-
-# Bloque principal
-if __name__ == "__main__":
-    inicio = time.time()
-    
-    print("Iniciando entrenamiento...")
-    entrenar()
-    
-    print("\nIniciando evaluación...")
-    resultados = evaluar(model)
-    
-    tiempo_total = time.time() - inicio
-    print(f"\nTiempo total de entrenamiento y evaluación: {tiempo_total:.2f} segundos")
-    
-    # Guardar el modelo
-    print("\nGuardando modelo...")
-    checkpoint = {
+    print("-" * 30)
+    print("RESUMEN FINAL DEL ENTRENAMIENTO")
+    print(f"Total Episodios: {num_episodes}")
+    print(f"Victorias J1 (IA): {total_victorias_j1} ({(total_victorias_j1/num_episodes)*100:.1f}%)")
+    print(f"Empates: {total_empates}")
+    print("-" * 30)
+entrenar()
+# Guardar el modelo
+print("\nGuardando modelo...")
+checkpoint = {
         'model_state_dict': model.state_dict(),
         'input_size': 11,
         'hidden_size': 128,

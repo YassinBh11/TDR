@@ -101,7 +101,7 @@ def traducir_accion_ia(accion_idx):
 
 
 # ===== CARGAR EL MODELO =====
-def cargar_modelo_ia(ruta="modelo_dqn_100k.pth"):
+def cargar_modelo_ia(ruta="modelo_dqn_estrategia_mental_1000.pth"):
     """Carga el modelo entrenado"""
     try:
         checkpoint = torch.load(ruta)
@@ -131,7 +131,7 @@ modo_juego = input("¿Contra quién quieres jugar?\n1. Jugador 2 humano\n2. IA (
 modelo_ia = None
 if modo_juego == "2":
     print("\n Cargando IA entrenada...")
-    modelo_ia = cargar_modelo_ia("modelo_dqn_100k.pth")
+    modelo_ia = cargar_modelo_ia("modelo_dqn_estrategia_mental_1000.pth")
     if modelo_ia is None:
         print(" No se pudo cargar la IA. Jugando contra J2 humano.")
         jugador2 = "j2"
