@@ -11,13 +11,13 @@ from collections import deque
 import time
 
 # Hiperparámetros DQN
-batch_size = 64
+batch_size = 256
 gamma = 0.999
 epsilon_start = 1.0
 epsilon_end = 0.05
-epsilon_decay = 0.9995
+epsilon_decay = 0.99999
 memory_capacity = 100000
-num_episodes = 1000
+num_episodes = 10000
 
 class Juego(gym.Env):
 
@@ -273,16 +273,16 @@ class Juego(gym.Env):
         # 1. CASILLA SUERTE — MUY PRIORITARIA
         # ------------------------------------------------------------
         if casilla_reclamada == "SUERTE":
-            reward_base = 2500.0
+            reward_base = 250.0
 
             if negativos:
                 mayor_neg = min(negativos)
                 valor_abs = abs(mayor_neg)
 
                 if valor_abs >= 4:
-                    return reward_base + valor_abs * 150.0  # combo fuerte
+                    return reward_base + valor_abs * 15.0  # combo fuerte
                 else:
-                    return reward_base - 500.0  # algo menos valiosa si negativos pequeños
+                    return reward_base - 50.0  # algo menos valiosa si negativos pequeños
             
             return reward_base
 
@@ -307,17 +307,17 @@ class Juego(gym.Env):
             if tiene_suerte:
                 # Convertir un negativo sigue siendo malo,
                 # pero menos porque lo transformará luego.
-                return -valor_abs * 100.0   # pequeña penalización
+                return -valor_abs * 10.0   # pequeña penalización
 
             else:
                 # Sin SUERTE: NEGATIVOS PROHIBIDOS
                 if valor_abs <= 3:
-                    return -5000.0  # castigo brutal
+                    return -500.0  # castigo brutal
 
                 if valor_abs >= 4:
                     # grande pero sin SUERTE → sigue siendo malísimo
-                    return -10000.0 
-                return -15000.0  # castigo máximo
+                    return -1000.0 
+                return -1500.0  # castigo máximo
 
         return 0.0
         
@@ -415,15 +415,15 @@ class Juego(gym.Env):
 
             if pieza_movida is not None:
                 # 2. Reward Shaping: Recompensa por avanzar (base)
-                reward_movimiento += float(dado) * 50.0
+                reward_movimiento += float(dado) * 5.0
                 
                 # 3. ANTI-TUNNEL VISION: Recompensa extra por sacar ficha de INICIO
                 if posicion_origen == 0:
-                    reward_movimiento += 300.0
+                    reward_movimiento += 30.0
                 
                 # Penalización pequeña si intenta mover algo que ya está en meta
                 if posicion_origen == self.meta_index:
-                    reward_movimiento -= 50.0
+                    reward_movimiento -= 5.0
 
                 try:
                     self.marcar_ultimo_ocupante(pieza_movida)
@@ -453,7 +453,7 @@ class Juego(gym.Env):
             else:
                 # Si el movimiento fue inválido (pieza_movida is None)
                 if turno_jugador == "j1":
-                    reward_movimiento = -100.0  # Castigo
+                    reward_movimiento = -10.0  # Castigo
 
             # Detectar qué casilla se reclamó para sumar su puntuación
             if turno_jugador == "j1":
